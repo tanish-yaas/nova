@@ -4,6 +4,9 @@ import {
   AtSign,
   BadgeCheck,
   Bell,
+  CalendarClock,
+  CalendarPlus,
+  CalendarX2,
   CalendarRange,
   CheckCircle2,
   ChevronDown,
@@ -22,6 +25,7 @@ import {
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { relativeTime } from "@/lib/relative-time";
+import { formatIST } from "@/lib/dates";
 import {
   DIGEST_LABELS,
   digestSummary,
@@ -55,6 +59,12 @@ function lookOf(n: NotificationView): Look {
       return { Icon: UserPlus, color: "var(--status-amber)" };
     case "MEMBER_APPROVED":
       return { Icon: BadgeCheck, color: "var(--status-green)" };
+    case "EVENT_INVITE":
+      return { Icon: CalendarPlus, color: "var(--primary)" };
+    case "EVENT_UPDATED":
+      return n.change === "cancelled"
+        ? { Icon: CalendarX2, color: "var(--status-red)" }
+        : { Icon: CalendarClock, color: "var(--status-amber)" };
     case "AI_SUGGESTION":
       return { Icon: Sparkles, color: "var(--primary)" };
     case "DIGEST":
@@ -108,8 +118,22 @@ function Sentence({ n }: { n: NotificationView }) {
     em(n.body ?? "a task")
   );
   const who = n.actor ? em(n.actor.name) : null;
+  const meeting = n.event ? (
+    <span className={n.event.deleted && n.change !== "cancelled" ? "text-faint line-through" : strong}>
+      {n.event.title}
+    </span>
+  ) : (
+    em(n.body?.split(" · ")[0] ?? "a meeting")
+  );
 
   switch (n.type) {
+    case "EVENT_INVITE":
+      return who ? <>{who} invited you to {meeting}</> : <>You were invited to {meeting}</>;
+    case "EVENT_UPDATED":
+      if (n.change === "cancelled") {
+        return who ? <>{who} cancelled {meeting}</> : <>{meeting} was cancelled</>;
+      }
+      return who ? <>{who} changed the time or place of {meeting}</> : <>{meeting} changed</>;
     case "TASK_ASSIGNED":
       if (n.recurring) return <>{taskName} is due again</>;
       return who ? <>{who} assigned you {taskName}</> : <>You were assigned {taskName}</>;
@@ -258,6 +282,17 @@ export function NotificationRow({
         <p className="text-[13px] leading-snug text-muted-foreground">
           <Sentence n={n} />
         </p>
+
+        {n.event && n.change !== "cancelled" && !n.event.deleted && (
+          <p className="mt-0.5 text-[12px] tabular-nums text-muted-foreground">
+            {formatIST(new Date(n.event.startAt), {
+              weekday: "short",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </p>
+        )}
 
         {n.quote && (
           <p

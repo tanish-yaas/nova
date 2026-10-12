@@ -8,6 +8,7 @@ import {
   useTransition,
 } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -20,8 +21,13 @@ import {
   Play,
   Plus,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
+import { scheduleMeeting } from "@/server/actions/meetings";
+import { MeetingDialog, nextHalfHour } from "@/components/meetings/meeting-dialog";
+import { toMeetingInput, type MeetingFormValues } from "@/components/meetings/meeting-form";
+import { fromLocalInput, istTodayKey, localInputFromKey } from "@/lib/dates";
 import { relativeTime } from "@/lib/relative-time";
 import { DateTimeField } from "@/components/ui/datetime-field";
 import { APP_CONFIG } from "@/config/app";
@@ -138,6 +144,34 @@ function Section({
   );
 }
 
+/**
+ * A task's details as a meeting. It starts when the task is due, since that
+ * is the time someone already picked; failing that, at a start that has not
+ * passed yet; failing that, at the next half hour. It runs for the task's
+ * estimate when there is a sensible one, and everyone on the task is invited.
+ */
+function meetingFromTask(detail: TaskDetailData): MeetingFormValues {
+  const todayKey = istTodayKey();
+  const startIsAhead =
+    !!detail.startAtInput && (fromLocalInput(detail.startAtInput)?.getTime() ?? 0) > Date.now();
+  const fallback = nextHalfHour(todayKey);
+  const startAt =
+    detail.dueAtInput ||
+    (startIsAhead ? detail.startAtInput : localInputFromKey(fallback.dayKey, fallback.minutes));
+  const estimate = Number(detail.estimatedMinutes);
+
+  return {
+    title: detail.title,
+    agenda: detail.description,
+    startAt,
+    durationMinutes: estimate >= 15 && estimate <= 480 ? estimate : 60,
+    mode: "office",
+    place: "",
+    link: "",
+    attendeeIds: detail.assignees.map((a) => a.id).filter((id) => id !== detail.viewerId),
+  };
+}
+
 export function TaskDetailSheet({
   taskId,
   onClose,
@@ -150,6 +184,8 @@ export function TaskDetailSheet({
   const [detail, setDetail] = useState<TaskDetailData | null>(null);
   const [loading, setLoading] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [converting, setConverting] = useState(false);
+  const router = useRouter();
 
   useEffect(() => setMounted(true), []);
 
@@ -230,13 +266,30 @@ export function TaskDetailSheet({
                   {detail?.title ?? "Loading…"}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <X size={16} />
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                {/* Some "tasks" are really a time to get people in a room.
+                    This makes it one: same name, notes and people, on the
+                    calendar with invites, and the task goes away. */}
+                {detail?.canEdit && !detail.parent && (
+                  <button
+                    type="button"
+                    onClick={() => setConverting(true)}
+                    title="Make this a meeting: on the calendar, with invites"
+                    className="pill pill-sm"
+                  >
+                    <Users size={12} />
+                    Turn into meeting
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -484,7 +537,40 @@ export function TaskDetailSheet({
     </AnimatePresence>
   );
 
-  return createPortal(sheet, document.body);
+  return (
+    <>
+      {createPortal(sheet, document.body)}
+      {detail && (
+        <MeetingDialog
+          open={converting}
+          heading="Turn into meeting"
+          note={`"${detail.title}" becomes a meeting with the same name, notes and people, and comes off the task list.`}
+          initial={meetingFromTask(detail)}
+          people={detail.allMembers.map((m) => ({
+            userId: m.id,
+            name: m.name,
+            avatarUrl: m.image,
+            image: null,
+          }))}
+          selfId={detail.viewerId}
+          submitLabel="Make it a meeting"
+          onSubmit={async (values) => {
+            const result = await scheduleMeeting(toMeetingInput(values), { fromTaskId: detail.id });
+            if (!result.ok) return result.error;
+            push(`"${values.title}" is a meeting now`);
+            setConverting(false);
+            onClose();
+            // The sheet is opened from the board, the task list and the
+            // calendar; whichever page is behind it has a task to lose and a
+            // meeting to gain.
+            router.refresh();
+            return null;
+          }}
+          onClose={() => setConverting(false)}
+        />
+      )}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------

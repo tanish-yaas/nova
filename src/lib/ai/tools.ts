@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { buildTaskScope } from "@/server/services/tasks";
-import { getVisibleCalendarIds } from "@/server/services/calendar";
+import { eventsInvolving, getVisibleCalendarIds } from "@/server/services/calendar";
 
 export type ChatContext = {
   orgId: string;
@@ -169,6 +169,9 @@ export function buildTools(ctx: ChatContext) {
             calendarId: { in: calendarIds },
             deletedAt: null,
             startAt: { gte: now, lte: until },
+            // Every calendar is visible to everyone now, but "my upcoming
+            // events" means the ones on this person's day, not the workspace's.
+            ...eventsInvolving([ctx.userId]),
           },
           orderBy: { startAt: "asc" },
           take: 30,

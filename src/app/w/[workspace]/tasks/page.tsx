@@ -16,16 +16,47 @@ import {
 } from "@/components/tasks/task-row";
 import { FocusZone } from "@/components/tasks/focus-zone";
 import { isStorageConfigured } from "@/lib/storage";
+import { getMeetingsFor, getWorkspacePeople } from "@/server/services/meetings";
+import { MeetingRow } from "@/components/meetings/meeting-row";
+import { ComposeSwitch } from "@/components/meetings/compose-switch";
+import type { MeetingPerson } from "@/components/meetings/meeting-form";
+import type { EventItem } from "@/components/calendar/types";
 
-function Section({ title, tasks }: { title: string; tasks: TaskRowData[] }) {
-  if (tasks.length === 0) return null;
+/** How far ahead the Upcoming section looks for meetings. */
+const MEETING_DAYS_AHEAD = 14;
+
+function Section({
+  title,
+  tasks,
+  meetings = [],
+  people,
+  selfId,
+  showDay = false,
+}: {
+  title: string;
+  tasks: TaskRowData[];
+  /** Meetings sit at the top of their section, in time order, filled. */
+  meetings?: EventItem[];
+  people: MeetingPerson[];
+  selfId: string;
+  showDay?: boolean;
+}) {
+  if (tasks.length === 0 && meetings.length === 0) return null;
   return (
     <section className="mt-7">
       <h2 className="mb-1 px-2 text-[11px] uppercase tracking-[0.05em] text-faint">
         {title}
-        <span className="ml-1.5 tabular-nums">{tasks.length}</span>
+        <span className="ml-1.5 tabular-nums">{tasks.length + meetings.length}</span>
+        {meetings.length > 0 && (
+          <span className="ml-1.5 normal-case tracking-normal">
+            · {meetings.length} {meetings.length === 1 ? "meeting" : "meetings"}
+          </span>
+        )}
       </h2>
       <div className="border-t border-border">
+        {meetings.map((m) => (
+          <MeetingRow key={m.id} event={m} people={people} selfId={selfId} showDay={showDay} />
+        ))}
         {tasks.map((t) => (
           <TaskRow key={t.id} task={t} />
         ))}
@@ -46,7 +77,10 @@ export default async function TasksPage() {
   // nowhere to put one — the recorder stays hidden rather than failing on save.
   const storageReady = isStorageConfigured();
 
-  const [tasks, memberRows, labelRows, teamRows] = await Promise.all([
+  const meetingsFrom = istKeyToDate(istTodayKey());
+  const meetingsTo = istKeyToDate(istTodayKey(), 24 * (MEETING_DAYS_AHEAD + 1), 0);
+
+  const [tasks, memberRows, labelRows, teamRows, meetings, people] = await Promise.all([
     prisma.task.findMany({
       where: scope,
       orderBy: [
@@ -79,7 +113,16 @@ export default async function TasksPage() {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    getMeetingsFor(orgId, userId, meetingsFrom, meetingsTo, ctx.permissions.has("calendar.edit_own")),
+    getWorkspacePeople(orgId),
   ]);
+
+  const meetingPeople: MeetingPerson[] = people.map((p) => ({
+    userId: p.userId,
+    name: p.name,
+    avatarUrl: p.avatarUrl,
+    image: p.image,
+  }));
 
   const members = memberRows.map((m) => ({
     userId: m.userId,
@@ -151,6 +194,11 @@ export default async function TasksPage() {
     const due = dueMap.get(r.id);
     return !!due && due < endOfToday;
   });
+  // Meetings you are on, split the same way the tasks are: today's (including
+  // ones already over, dimmed) and the next two weeks.
+  const todayMeetings = meetings.filter((m) => new Date(m.startAt) < endOfToday);
+  const upcomingMeetings = meetings.filter((m) => new Date(m.startAt) >= endOfToday);
+
   const later = open.filter(
     (r) => !r.overdue && r.dueAtLabel !== null && !today.includes(r)
   );
@@ -185,50 +233,65 @@ export default async function TasksPage() {
         openCount={open.length}
         doneCount={done.length}
       >
-        {ctx.permissions.has("ai.use") ? (
-          <div className="flex flex-col gap-2">
-            <SmartComposer
+        <ComposeSwitch people={meetingPeople} selfId={userId} todayKey={todayKey}>
+          {ctx.permissions.has("ai.use") ? (
+            <div className="flex flex-col gap-2">
+              <SmartComposer
+                members={members}
+                currentUserId={userId}
+                labels={labelRows}
+                storageReady={storageReady}
+              />
+              <details>
+                <summary className="cursor-pointer text-[12px] text-faint transition-colors hover:text-foreground">
+                  Add manually
+                </summary>
+                <div className="mt-2">
+                  <TaskComposer
+                    members={members}
+                    currentUserId={userId}
+                    labels={labelRows}
+                    teams={teamRows}
+                    storageReady={storageReady}
+                  />
+                </div>
+              </details>
+            </div>
+          ) : (
+            <TaskComposer
               members={members}
               currentUserId={userId}
               labels={labelRows}
+              teams={teamRows}
               storageReady={storageReady}
             />
-            <details>
-              <summary className="cursor-pointer text-[12px] text-faint transition-colors hover:text-foreground">
-                Add manually
-              </summary>
-              <div className="mt-2">
-                <TaskComposer
-                  members={members}
-                  currentUserId={userId}
-                  labels={labelRows}
-                  teams={teamRows}
-                  storageReady={storageReady}
-                />
-              </div>
-            </details>
-          </div>
-        ) : (
-          <TaskComposer
-            members={members}
-            currentUserId={userId}
-            labels={labelRows}
-            teams={teamRows}
-            storageReady={storageReady}
-          />
-        )}
+          )}
+        </ComposeSwitch>
 
-        {rows.length === 0 && (
+        {rows.length === 0 && meetings.length === 0 && (
           <p className="mt-10 text-center text-[13px] text-faint">
             No tasks yet. Describe one above in plain language.
           </p>
         )}
 
-        <Section title="Overdue" tasks={overdue} />
-        <Section title="Today" tasks={today} />
-        <Section title="Upcoming" tasks={later} />
-        <Section title="No date" tasks={undated} />
-        <Section title="Done" tasks={done} />
+        <Section title="Overdue" tasks={overdue} people={meetingPeople} selfId={userId} />
+        <Section
+          title="Today"
+          tasks={today}
+          meetings={todayMeetings}
+          people={meetingPeople}
+          selfId={userId}
+        />
+        <Section
+          title="Upcoming"
+          tasks={later}
+          meetings={upcomingMeetings}
+          people={meetingPeople}
+          selfId={userId}
+          showDay
+        />
+        <Section title="No date" tasks={undated} people={meetingPeople} selfId={userId} />
+        <Section title="Done" tasks={done} people={meetingPeople} selfId={userId} />
       </FocusZone>
     </div>
   );

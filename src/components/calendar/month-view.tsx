@@ -15,7 +15,7 @@ import type { AnchorRect } from "@/lib/ui-scale";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** A run of days one event or task occupies, and where it sits in the stack. */
-type Bar = { id: string; keys: string[]; sortAt: number } & (
+type Bar = { id: string; keys: string[]; sortAt: number; rank: number } & (
   | { kind: "event"; event: EventItem }
   | { kind: "task"; task: TaskItem }
 );
@@ -51,6 +51,7 @@ export function MonthView({
       id: `e-${event.id}`,
       keys: dayKeysForEvent(event),
       sortAt: event.allDay ? -1 : new Date(event.startAt).getTime(),
+      rank: event.isMeeting ? 0 : 1,
       event,
     })),
     // A task is a stretch of work, not a point: it draws from where it starts
@@ -60,6 +61,7 @@ export function MonthView({
       id: `t-${task.id}`,
       keys: dayKeysForTask(task),
       sortAt: new Date(task.startAt ?? task.createdAt).getTime(),
+      rank: 2,
       task,
     })),
   ];

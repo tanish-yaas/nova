@@ -1,6 +1,7 @@
 "use client";
 
-import { CalendarDays } from "lucide-react";
+import { Building2, CalendarDays, Video } from "lucide-react";
+import { placeLabel } from "@/lib/meetings";
 import { addDaysToKey, formatIST, istKeyToDate } from "@/lib/dates";
 import { EmptyState } from "@/components/ui/empty-state";
 import { dayKeysForEvent, dayKeysForTask } from "./layout";
@@ -64,7 +65,7 @@ export function AgendaView({
     keys.forEach((key, i) =>
       push(key, {
         kind: "task",
-        sortAt: new Date(task.startAt ?? task.dueAt).getTime(),
+        sortAt: new Date(task.startAt ?? task.createdAt).getTime(),
         task,
         continuesBefore: i > 0,
         continuesAfter: i < keys.length - 1,
@@ -135,10 +136,21 @@ export function AgendaView({
                         }
                         className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-[color-mix(in_oklab,white_4%,transparent)]"
                       >
-                        <span
-                          className="h-8 w-0.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: row.event.color }}
-                        />
+                        {/* Meetings get a filled tile, plain events a thin rule:
+                            the same solid-versus-tint rule as the grid. */}
+                        {row.event.isMeeting ? (
+                          <span
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white"
+                            style={{ backgroundColor: `color-mix(in oklab, ${row.event.color} 72%, #000)` }}
+                          >
+                            {row.event.mode === "online" ? <Video size={14} /> : <Building2 size={14} />}
+                          </span>
+                        ) : (
+                          <span
+                            className="h-8 w-0.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: row.event.busy ? "var(--text-faint)" : row.event.color }}
+                          />
+                        )}
                         <span className="w-24 shrink-0 text-[11px] tabular-nums text-faint">
                           {/* On the days a run passes through, the original
                               start–end pair would be a lie about this day. Each
@@ -168,17 +180,28 @@ export function AgendaView({
                           <span className="block truncate text-[13px]">
                             {row.event.title}
                           </span>
-                          {(row.event.location || !row.event.isOwnCalendar) && (
+                          {row.event.isMeeting ? (
                             <span className="block truncate text-[11px] text-faint">
                               {[
-                                row.event.location,
-                                row.event.isOwnCalendar
-                                  ? null
-                                  : row.event.ownerName,
+                                placeLabel(row.event.mode ?? "office", row.event.location, row.event.meetingUrl),
+                                `${row.event.attendees.length} ${row.event.attendees.length === 1 ? "person" : "people"}`,
+                                row.event.myStatus === "NEEDS_ACTION" ? "you haven't answered" : null,
+                                row.event.myStatus === "DECLINED" ? "you're not going" : null,
                               ]
                                 .filter(Boolean)
                                 .join(" · ")}
                             </span>
+                          ) : (
+                            (row.event.location || !row.event.isOwnCalendar) && (
+                              <span className="block truncate text-[11px] text-faint">
+                                {[
+                                  row.event.location,
+                                  row.event.isOwnCalendar ? null : row.event.ownerName,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </span>
+                            )
                           )}
                         </span>
                       </button>
@@ -202,12 +225,14 @@ export function AgendaView({
                           {/* "Due 17:00" on a day three days before the
                               deadline reads as today's problem. Only the last
                               day of the bar is the day it is owed. */}
-                          {row.continuesAfter
-                            ? "In progress"
-                            : `Due ${formatIST(new Date(row.task.dueAt), {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}`}
+                          {row.task.ongoing
+                            ? "Ongoing"
+                            : row.continuesAfter || !row.task.dueAt
+                              ? "In progress"
+                              : `Due ${formatIST(new Date(row.task.dueAt), {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}`}
                         </span>
                         <span
                           className={`min-w-0 flex-1 truncate text-[13px] ${

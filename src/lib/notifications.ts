@@ -29,6 +29,10 @@ export type NotificationView = {
   } | null;
   /** The task as it is now, so a renamed task reads with its current name. */
   task: { id: string; title: string; deleted: boolean } | null;
+  /** The meeting a meeting notification is about, as it is now. */
+  event: { id: string; title: string; startAt: string; deleted: boolean } | null;
+  /** For a meeting that changed: was it moved or called off. */
+  change: "moved" | "cancelled" | null;
   /** The quoted part: a comment's text. */
   quote: string | null;
   title: string;

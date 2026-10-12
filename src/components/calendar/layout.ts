@@ -46,23 +46,32 @@ export function dayKeysForEvent(event: EventItem): string[] {
 }
 
 /**
- * Every IST day a task covers, from when the work starts to its deadline.
+ * Every IST day a task covers, from when the work starts to its end.
  *
- * "Complete the deck by Friday" is not a Friday problem — it is a problem from
+ * "Complete the deck by Friday" is not a Friday problem: it is a problem from
  * the moment it exists until Friday, and the bar says so. An explicit start
  * date wins; without one the task starts when it was created.
+ *
+ * A task with no deadline is work that is simply going on, so it runs to
+ * today and keeps running every day until it is done. One that has been open
+ * for months shows its most recent stretch rather than its first, so today is
+ * always on it.
  */
 export function dayKeysForTask(task: TaskItem): string[] {
-  const due = new Date(task.dueAt).getTime();
+  const end = new Date(task.endAt).getTime();
   const start = new Date(task.startAt ?? task.createdAt).getTime();
 
-  // A start after its own deadline is bad data, not a bar running backwards
-  // from the deadline into next week. Fall back to the day it is owed.
-  if (!Number.isFinite(start) || start > due) {
-    return [istDayKey(new Date(due))];
+  // A start after its own end is bad data, not a bar running backwards
+  // from the deadline into next week. Fall back to the day it ends.
+  if (!Number.isFinite(start) || start > end) {
+    return [istDayKey(new Date(end))];
   }
 
-  return spanKeys(start, due);
+  if (task.ongoing && end - start > (MAX_SPAN_DAYS - 1) * DAY_MS) {
+    return spanKeys(end - (MAX_SPAN_DAYS - 1) * DAY_MS, end);
+  }
+
+  return spanKeys(start, end);
 }
 
 /**
@@ -165,11 +174,15 @@ export function packColumns(slices: DaySlice[]): PositionedEvent[] {
  * the bar touches. That is what keeps two bars off each other while letting a
  * short one sit above a long one it never meets.
  */
-export function assignLanes<T extends { id: string; keys: string[]; sortAt: number }>(
-  items: T[]
-): Map<string, number> {
+export function assignLanes<
+  T extends { id: string; keys: string[]; sortAt: number; rank?: number }
+>(items: T[]): Map<string, number> {
   const ordered = [...items].sort(
     (a, b) =>
+      // Fixed commitments first. A day cell shows three rows, and a meeting
+      // pushed under "+3 more" by a week-long task bar is the one thing on
+      // the day that cannot be missed.
+      (a.rank ?? 1) - (b.rank ?? 1) ||
       // Earliest first, so a run already in progress keeps the lane it had.
       (a.keys[0] ?? "").localeCompare(b.keys[0] ?? "") ||
       // Then longest, so the bars that cross the most days settle at the top

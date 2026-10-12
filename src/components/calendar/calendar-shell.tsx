@@ -16,6 +16,7 @@ import {
   Layers,
   Maximize2,
   Minimize2,
+  Users,
   X,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
@@ -46,14 +47,28 @@ import { EventPopover } from "./event-popover";
 import type { EventPatch } from "@/lib/validators/event";
 import { EventForm, type EventFormValues } from "./event-form";
 import { dayKeysForTask, eventsOnDay } from "./layout";
+import { CalendarPeoplePicker } from "./people-picker";
 import {
   CALENDAR_VIEWS,
   type CalendarOption,
+  type CalendarPerson,
   type CalendarView,
   type DraftSlot,
   type EventItem,
   type TaskItem,
 } from "./types";
+import { scheduleMeeting, updateMeeting } from "@/server/actions/meetings";
+import {
+  MeetingForm,
+  toMeetingInput,
+  type MeetingFormValues,
+} from "@/components/meetings/meeting-form";
+import {
+  MeetingDialog,
+  blankMeeting,
+  meetingValues,
+  nextHalfHour,
+} from "@/components/meetings/meeting-dialog";
 import { toZoomed, type AnchorRect } from "@/lib/ui-scale";
 
 const HIDDEN_KEY = "yaas.calendar.hidden";
@@ -76,6 +91,9 @@ export function CalendarShell({
   calendars,
   openTasks,
   members,
+  people,
+  inView,
+  selfId,
   workingHoursStart,
   workingHoursEnd,
   canCreate,
@@ -88,6 +106,11 @@ export function CalendarShell({
   calendars: CalendarOption[];
   openTasks: { id: string; title: string }[];
   members: { userId: string; name: string }[];
+  /** Everyone in the workspace, each with the colour they are drawn in. */
+  people: CalendarPerson[];
+  /** Whose calendars are on screen: ids, or "all". */
+  inView: string[] | "all";
+  selfId: string;
   workingHoursStart: number;
   workingHoursEnd: number;
   canCreate: boolean;
@@ -105,6 +128,10 @@ export function CalendarShell({
   const [allHours, setAllHours] = useState(false);
   const [panelKey, setPanelKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftSlot | null>(null);
+  // A new thing from a clicked slot or the header is a meeting unless the
+  // person switches it to a plain event.
+  const [draftKind, setDraftKind] = useState<"meeting" | "event">("meeting");
+  const [editingMeeting, setEditingMeeting] = useState<EventItem | null>(null);
   const [popover, setPopover] = useState<{ id: string; rect: AnchorRect } | null>(
     null
   );
@@ -157,14 +184,41 @@ export function CalendarShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [focus, panelKey, draft, popover]);
 
+  // The people on screen ride along in the URL, so a view of someone's
+  // calendar is a link and survives paging through weeks.
+  const peopleParam =
+    inView === "all"
+      ? "&people=all"
+      : inView.length === 1 && inView[0] === selfId
+        ? ""
+        : `&people=${inView.join(",")}`;
+
   const navigate = useCallback(
     (nextView: CalendarView, nextKey: string) => {
-      router.push(link(`/calendar?view=${nextView}&date=${nextKey}`), {
+      router.push(link(`/calendar?view=${nextView}&date=${nextKey}${peopleParam}`), {
         scroll: false,
       });
     },
-    [router]
+    [router, link, peopleParam]
   );
+
+  function showPeople(next: string[] | "all") {
+    const param =
+      next === "all"
+        ? "&people=all"
+        : next.length === 1 && next[0] === selfId
+          ? ""
+          : `&people=${next.join(",")}`;
+    router.push(link(`/calendar?view=${view}&date=${anchorKey}${param}`), { scroll: false });
+  }
+
+  function openSchedule(dayKey: string, startMinutes?: number, kind: "meeting" | "event" = "meeting") {
+    const start =
+      startMinutes ??
+      (dayKey === todayKey ? nextHalfHour(todayKey).minutes : 10 * 60);
+    setDraftKind(kind);
+    setDraft({ dayKey, startMinutes: start, endMinutes: start + 30 });
+  }
 
   const step = useCallback(
     (delta: number) => {
@@ -354,6 +408,25 @@ export function CalendarShell({
     return null;
   }
 
+  async function handleSchedule(values: MeetingFormValues): Promise<string | null> {
+    const result = await scheduleMeeting(toMeetingInput(values));
+    if (!result.ok) return result.error;
+    push(values.attendeeIds.length ? "Meeting scheduled, invites sent" : "Meeting scheduled");
+    setDraft(null);
+    router.refresh();
+    return null;
+  }
+
+  async function handleMeetingUpdate(values: MeetingFormValues): Promise<string | null> {
+    if (!editingMeeting) return null;
+    const result = await updateMeeting(editingMeeting.id, toMeetingInput(values));
+    if (!result.ok) return result.error;
+    push("Meeting updated");
+    setEditingMeeting(null);
+    router.refresh();
+    return null;
+  }
+
   async function handleDelete(eventId: string): Promise<string | null> {
     const before = events;
     setEvents((prev) => prev.filter((e) => e.id !== eventId));
@@ -399,12 +472,28 @@ export function CalendarShell({
             {heading}
           </h1>
           <p className="mt-0.5 text-[12px] text-faint">
-            {visibleEvents.length} {visibleEvents.length === 1 ? "event" : "events"} ·{" "}
-            {tasks.length} {tasks.length === 1 ? "deadline" : "deadlines"}
+            {(() => {
+              const meetings = visibleEvents.filter((e) => e.isMeeting).length;
+              const others = visibleEvents.length - meetings;
+              return [
+                `${meetings} ${meetings === 1 ? "meeting" : "meetings"}`,
+                others > 0 && `${others} ${others === 1 ? "event" : "events"}`,
+                `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+            })()}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          <CalendarPeoplePicker
+            people={people}
+            inView={inView}
+            selfId={selfId}
+            onChange={showPeople}
+          />
+
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -497,20 +586,25 @@ export function CalendarShell({
           </button>
 
           {canCreate && (
-            <button
-              type="button"
-              onClick={() =>
-                setDraft({
-                  dayKey: todayKey,
-                  startMinutes: 9 * 60,
-                  endMinutes: 10 * 60,
-                })
-              }
-              className="inline-flex h-[34px] items-center gap-2 rounded-full bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
-            >
-              <CalendarPlus size={14} />
-              New event
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => openSchedule(todayKey, undefined, "event")}
+                title="Something on the calendar with nobody invited: leave, a launch, a reminder"
+                className="icon-btn"
+                aria-label="New event"
+              >
+                <CalendarPlus size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => openSchedule(todayKey)}
+                className="inline-flex h-[34px] items-center gap-2 rounded-full bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                <Users size={14} />
+                Schedule meeting
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -536,7 +630,14 @@ export function CalendarShell({
           endHour={endHour}
           detailed={view === "day"}
           onSelectEvent={selectEvent}
-          onCreateSlot={canCreate ? setDraft : () => {}}
+          onCreateSlot={
+            canCreate
+              ? (slot) => {
+                  setDraftKind("meeting");
+                  setDraft(slot);
+                }
+              : () => {}
+          }
           onMoveEvent={handleMove}
           onResizeEvent={handleResize}
           onOpenDay={setPanelKey}
@@ -591,6 +692,8 @@ export function CalendarShell({
         onCreate={handleCreate}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
+        onSelectEvent={selectEvent}
+        onScheduleMeeting={(key) => openSchedule(key)}
       />
 
       {popover && popoverEvent && (
@@ -601,6 +704,14 @@ export function CalendarShell({
           onClose={() => setPopover(null)}
           onPatch={handlePatch}
           onDelete={handleDelete}
+          onEditMeeting={(event) => {
+            setPopover(null);
+            setEditingMeeting(event);
+          }}
+          onChanged={() => {
+            setPopover(null);
+            router.refresh();
+          }}
         />
       )}
 
@@ -622,35 +733,80 @@ export function CalendarShell({
                   exit={{ opacity: 0, y: 8, scale: 0.98 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
                   onClick={(e) => e.stopPropagation()}
-                  className="overlay w-full max-w-md px-4 py-4"
+                  className={`overlay w-full px-5 py-4 ${draftKind === "meeting" ? "max-w-lg" : "max-w-md"}`}
                 >
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-faint">
-                      New event
-                    </p>
+                  <div className="mb-4 flex items-center justify-between">
+                    {/* One dialog for both: a meeting has people, an event
+                        is just time on the calendar. */}
+                    <div className="inline-flex rounded-full border border-[color-mix(in_oklab,white_11%,transparent)] p-0.5">
+                      {(["meeting", "event"] as const).map((kind) => (
+                        <button
+                          key={kind}
+                          type="button"
+                          data-on={draftKind === kind}
+                          onClick={() => setDraftKind(kind)}
+                          className={
+                            draftKind === kind
+                              ? "pill pill-sm"
+                              : "inline-flex h-7 items-center rounded-full px-3 text-[12px] text-faint transition-colors hover:text-foreground"
+                          }
+                        >
+                          {kind === "meeting" ? "Meeting" : "Event"}
+                        </button>
+                      ))}
+                    </div>
                     <button
                       type="button"
                       onClick={() => setDraft(null)}
+                      aria-label="Close"
                       className="rounded p-1 text-faint transition-colors hover:text-foreground"
                     >
                       <X size={14} />
                     </button>
                   </div>
 
-                  <DraftForm
-                    draft={draft}
-                    calendars={calendars}
-                    openTasks={openTasks}
-                    defaultCalendarId={defaultCalendarId}
-                    onCreate={handleCreate}
-                    onClose={() => setDraft(null)}
-                  />
+                  {draftKind === "meeting" ? (
+                    <MeetingForm
+                      key={`${draft.dayKey}-${draft.startMinutes}`}
+                      initial={blankMeeting(
+                        draft.dayKey,
+                        draft.startMinutes,
+                        Math.max(15, draft.endMinutes - draft.startMinutes)
+                      )}
+                      people={people}
+                      selfId={selfId}
+                      submitLabel="Schedule meeting"
+                      onSubmit={handleSchedule}
+                      onCancel={() => setDraft(null)}
+                    />
+                  ) : (
+                    <DraftForm
+                      draft={draft}
+                      calendars={calendars}
+                      openTasks={openTasks}
+                      defaultCalendarId={defaultCalendarId}
+                      onCreate={handleCreate}
+                      onClose={() => setDraft(null)}
+                    />
+                  )}
                 </motion.div>
               </motion.div>
             )}
           </AnimatePresence>,
           document.body
         )}
+
+      <MeetingDialog
+        open={!!editingMeeting}
+        heading="Edit meeting"
+        initial={editingMeeting ? meetingValues(editingMeeting) : blankMeeting(todayKey, 600)}
+        people={people}
+        selfId={selfId}
+        submitLabel="Save changes"
+        note="Anyone you add gets an invite. If the time or place changes, everyone already on it is told."
+        onSubmit={handleMeetingUpdate}
+        onClose={() => setEditingMeeting(null)}
+      />
     </>
   );
 

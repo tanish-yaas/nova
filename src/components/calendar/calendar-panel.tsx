@@ -298,7 +298,7 @@ export function CalendarPanel({
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px]">Tasks</p>
             <p className="truncate text-[11px] text-faint">
-              {taskCount} due in view
+              {taskCount} in view
             </p>
           </div>
 

@@ -1,53 +1,54 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma";
 
+/**
+ * Events this person may read in full. A private or confidential event is
+ * readable by whoever owns its calendar and whoever is on it; to everyone
+ * else it is a block of busy time, never a title.
+ */
+export function readableEventFor(userId: string): Prisma.CalendarEventWhereInput {
+  return {
+    OR: [
+      { visibility: { in: ["DEFAULT", "PUBLIC"] } },
+      { calendar: { ownerId: userId } },
+      { attendees: { some: { userId } } },
+    ],
+  };
+}
+
+/** Events that are on this person's day: their own calendar, or ones they are invited to and have not turned down. */
+export function eventsInvolving(userIds: string[]): Prisma.CalendarEventWhereInput {
+  return {
+    OR: [
+      { calendar: { ownerId: { in: userIds } } },
+      { attendees: { some: { userId: { in: userIds }, status: { not: "DECLINED" } } } },
+    ],
+  };
+}
+
+/**
+ * Every calendar in the workspace, for every active member.
+ *
+ * Calendars were private by default: a member saw their own, whatever was
+ * shared with them, and their team's if their role allowed it. The workspace
+ * runs on knowing who is busy when, so everyone can now see everyone's.
+ * What stays protected is narrower and handled where events are read:
+ * an event marked private shows to others as "Busy", nothing more. Editing
+ * is unchanged and still follows calendar.edit_* and shares.
+ *
+ * `permissions` stays in the signature so callers did not have to change;
+ * every caller has already passed requireContext, so membership is settled.
+ */
 export async function getVisibleCalendarIds(
   orgId: string,
-  userId: string,
-  permissions: Set<string>
+  _userId: string,
+  _permissions: Set<string>
 ): Promise<string[]> {
-  if (permissions.has("calendar.view_any")) {
-    const all = await prisma.calendar.findMany({
-      where: { organizationId: orgId, deletedAt: null },
-      select: { id: true },
-    });
-    return all.map((c) => c.id);
-  }
-
-  const owned = await prisma.calendar.findMany({
-    where: { organizationId: orgId, ownerId: userId, deletedAt: null },
+  const all = await prisma.calendar.findMany({
+    where: { organizationId: orgId, deletedAt: null },
     select: { id: true },
   });
-
-  const shared = await prisma.calendarShare.findMany({
-    where: { organizationId: orgId, userId },
-    select: { calendarId: true },
-  });
-
-  const ids = new Set([
-    ...owned.map((c) => c.id),
-    ...shared.map((s) => s.calendarId),
-  ]);
-
-  if (permissions.has("calendar.view_team")) {
-    const teams = await prisma.teamMember.findMany({
-      where: { userId, organizationId: orgId },
-      select: { teamId: true },
-    });
-
-    if (teams.length > 0) {
-      const teamCalendars = await prisma.calendar.findMany({
-        where: {
-          organizationId: orgId,
-          deletedAt: null,
-          teamId: { in: teams.map((t) => t.teamId) },
-        },
-        select: { id: true },
-      });
-      teamCalendars.forEach((c) => ids.add(c.id));
-    }
-  }
-
-  return [...ids];
+  return all.map((c) => c.id);
 }
 
 export type VisibleCalendar = {

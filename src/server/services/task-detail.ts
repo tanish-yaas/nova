@@ -88,6 +88,8 @@ export type TaskDetailData = {
   canEdit: boolean;
   /** Object storage is configured, so recording and uploading are available. */
   storageReady: boolean;
+  /** Who is looking: the organizer if this task is turned into a meeting. */
+  viewerId: string;
 };
 
 const DONE_STATUSES = ["DONE", "CANCELLED"];
@@ -352,5 +354,6 @@ export async function getTaskDetail(
     // board, the task rows and the suggestion sheet, none of which are server
     // components with the env to hand.
     storageReady: isStorageConfigured(),
+    viewerId: userId,
   };
 }

@@ -17,6 +17,7 @@ import { formatIST, toLocalInput } from "@/lib/dates";
 import type { EventPatch } from "@/lib/validators/event";
 import type { EventItem } from "./types";
 import { viewportSize, type AnchorRect } from "@/lib/ui-scale";
+import { MeetingDetails } from "@/components/meetings/meeting-details";
 
 const WIDTH = 340;
 const MARGIN = 12;
@@ -31,11 +32,17 @@ export function EventPopover({
   onClose,
   onPatch,
   onDelete,
+  onEditMeeting,
+  onChanged,
 }: {
   event: EventItem;
   anchor: AnchorRect;
   openTasks: { id: string; title: string }[];
   onClose: () => void;
+  /** Meetings edit in the full meeting form, not inline. */
+  onEditMeeting: (event: EventItem) => void;
+  /** After an answer or a cancel from the meeting view. */
+  onChanged: () => void;
   onPatch: (eventId: string, patch: EventPatch) => Promise<string | null>;
   onDelete: (eventId: string) => Promise<string | null>;
 }) {
@@ -125,6 +132,79 @@ export function EventPopover({
   }
 
   const readOnly = !event.canEdit;
+
+  const meetingCard = (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="overlay fixed z-[95] overflow-hidden"
+      style={{ left: position.left, top: position.top, width: WIDTH }}
+    >
+      {/* The meeting's colour across the top: the same fill it has on the grid. */}
+      <div
+        className="flex items-start gap-2 px-3.5 pb-2.5 pt-3 text-white"
+        style={{ backgroundColor: `color-mix(in oklab, ${event.color} 72%, #000)` }}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-white/70">
+            Meeting{event.organizerName && ` · ${event.organizerName}`}
+          </p>
+          <p className="mt-0.5 text-[15px] font-semibold leading-snug">{event.title}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="shrink-0 rounded p-1 text-white/70 transition-colors hover:text-white"
+        >
+          <X size={13} />
+        </button>
+      </div>
+      <div className="max-h-[calc(0.6*var(--vh))] overflow-y-auto p-3.5">
+        <MeetingDetails
+          event={event}
+          onEdit={() => onEditMeeting(event)}
+          onChanged={() => {
+            onChanged();
+          }}
+        />
+      </div>
+    </motion.div>
+  );
+
+  // Someone else's private time: that it is taken, and nothing else.
+  const busyCard = (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="overlay fixed z-[95] p-3"
+      style={{ left: position.left, top: position.top, width: WIDTH }}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] font-medium">Busy</p>
+        <button type="button" onClick={onClose} aria-label="Close" className="rounded p-1 text-faint hover:text-foreground">
+          <X size={13} />
+        </button>
+      </div>
+      <p className="mt-1 text-[12px] tabular-nums text-muted-foreground">
+        {formatIST(new Date(event.startAt), { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+        {" – "}
+        {formatIST(new Date(event.endAt), { hour: "2-digit", minute: "2-digit" })}
+      </p>
+      <p className="mt-2 text-[11px] text-faint">
+        {event.ownerName} marked this private, so only the time shows.
+      </p>
+    </motion.div>
+  );
+
+  if (event.isMeeting) return createPortal(meetingCard, document.body);
+  if (event.busy) return createPortal(busyCard, document.body);
 
   const card = (
     <motion.div

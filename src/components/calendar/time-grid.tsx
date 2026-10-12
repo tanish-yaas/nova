@@ -15,12 +15,13 @@ import {
   packColumns,
   slicesForDay,
 } from "./layout";
-import { EventChip, TaskChip } from "./event-chip";
+import { EventChip, TaskChip, eventTitle } from "./event-chip";
+import { placeLabel } from "@/lib/meetings";
 import type { DraftSlot, EventItem, TaskItem } from "./types";
 import { toZoomed, zoomOf, type AnchorRect } from "@/lib/ui-scale";
 
 /** One run in the all-day strip: an all-day event, or a task's start→due bar. */
-type StripBar = { id: string; keys: string[]; sortAt: number } & (
+type StripBar = { id: string; keys: string[]; sortAt: number; rank: number } & (
   | { kind: "event"; event: EventItem }
   | { kind: "task"; task: TaskItem }
 );
@@ -257,6 +258,7 @@ export function TimeGrid({
         id: `e-${event.id}`,
         keys: dayKeysForEvent(event),
         sortAt: -1,
+        rank: 0,
         event,
       })),
     ...tasks.map((task) => ({
@@ -264,6 +266,7 @@ export function TimeGrid({
       id: `t-${task.id}`,
       keys: dayKeysForTask(task),
       sortAt: new Date(task.startAt ?? task.createdAt).getTime(),
+      rank: 2,
       task,
     })),
   ];
@@ -480,15 +483,36 @@ export function TimeGrid({
                           }% + 2px)`,
                           width: `calc(${100 / slot.columns}% - 4px)`,
                           transform: offsetX ? `translateX(${offsetX}px)` : undefined,
-                          backgroundColor: `color-mix(in oklab, ${slot.event.color} 26%, var(--card))`,
-                          borderColor: `color-mix(in oklab, ${slot.event.color} 55%, transparent)`,
+                          // Meetings solid, plain events tinted, someone's
+                          // private time grey: the same rule as the chips.
+                          ...(slot.event.busy
+                            ? {
+                                backgroundColor: "color-mix(in oklab, var(--text-faint) 14%, var(--card))",
+                                borderColor: "color-mix(in oklab, var(--text-faint) 30%, transparent)",
+                              }
+                            : slot.event.isMeeting
+                              ? {
+                                  backgroundColor: `color-mix(in oklab, ${slot.event.color} 72%, #000)`,
+                                  borderColor: `color-mix(in oklab, ${slot.event.color} 85%, white)`,
+                                  color: "#fff",
+                                }
+                              : {
+                                  backgroundColor: `color-mix(in oklab, ${slot.event.color} 26%, var(--card))`,
+                                  borderColor: `color-mix(in oklab, ${slot.event.color} 55%, transparent)`,
+                                }),
+                          opacity: slot.event.myStatus === "DECLINED" ? 0.45 : undefined,
                         }}
+                        title={eventTitle(slot.event)}
                       >
                         <p className="truncate text-[11px] font-medium leading-tight">
                           {slot.event.title}
                         </p>
                         {height > 30 && (
-                          <p className="truncate text-[10px] tabular-nums text-muted-foreground">
+                          <p
+                            className={`truncate text-[10px] tabular-nums ${
+                              slot.event.isMeeting ? "text-white/75" : "text-muted-foreground"
+                            }`}
+                          >
                             {formatIST(new Date(slot.event.startAt), {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -500,18 +524,28 @@ export function TimeGrid({
                             })}
                           </p>
                         )}
-                        {!slot.event.isOwnCalendar && height > 44 && (
+                        {slot.event.isMeeting && height > 44 && (
+                          <p className="truncate text-[10px] text-white/75">
+                            {placeLabel(slot.event.mode ?? "office", slot.event.location, slot.event.meetingUrl)}
+                            {slot.event.attendees.length > 1 && ` · ${slot.event.attendees.length} people`}
+                          </p>
+                        )}
+                        {!slot.event.isMeeting && !slot.event.isOwnCalendar && height > 44 && (
                           <p className="truncate text-[10px] text-faint">
                             {slot.event.ownerName}
                           </p>
                         )}
-                        {detailed && height > 56 && slot.event.location && (
+                        {!slot.event.isMeeting && detailed && height > 56 && slot.event.location && (
                           <p className="truncate text-[10px] text-muted-foreground">
                             {slot.event.location}
                           </p>
                         )}
                         {detailed && height > 76 && slot.event.description && (
-                          <p className="line-clamp-2 text-[10px] text-faint">
+                          <p
+                            className={`line-clamp-2 text-[10px] ${
+                              slot.event.isMeeting ? "text-white/60" : "text-faint"
+                            }`}
+                          >
                             {slot.event.description}
                           </p>
                         )}

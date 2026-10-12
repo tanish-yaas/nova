@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { buildTaskScope } from "@/server/services/tasks";
-import { getVisibleCalendarIds } from "@/server/services/calendar";
+import { getVisibleCalendarIds, readableEventFor } from "@/server/services/calendar";
 import { formatIST } from "@/lib/dates";
 
 export type SearchResult = {
@@ -55,10 +55,16 @@ export async function searchWorkspace(params: {
             organizationId: params.orgId,
             calendarId: { in: calendarIds },
             deletedAt: null,
-            OR: [
-              { title: { contains: q, mode: "insensitive" } },
-              { description: { contains: q, mode: "insensitive" } },
-              { location: { contains: q, mode: "insensitive" } },
+            // Everyone's calendar is searchable now; a private event is not.
+            AND: [
+              readableEventFor(params.userId),
+              {
+                OR: [
+                  { title: { contains: q, mode: "insensitive" } },
+                  { description: { contains: q, mode: "insensitive" } },
+                  { location: { contains: q, mode: "insensitive" } },
+                ],
+              },
             ],
           },
           orderBy: { startAt: "desc" },

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { CalendarPlus, MapPin, Trash2, X } from "lucide-react";
+import { Building2, CalendarPlus, MapPin, Trash2, Users, Video, X } from "lucide-react";
 import {
   formatIST,
   istKeyToDate,
@@ -11,6 +11,8 @@ import {
   toLocalInput,
 } from "@/lib/dates";
 import { TaskRow } from "@/components/tasks/task-row";
+import { RSVP_LABELS, placeLabel } from "@/lib/meetings";
+import { toZoomed, type AnchorRect } from "@/lib/ui-scale";
 import { EventForm, type EventFormValues } from "./event-form";
 import type { CalendarOption, EventItem, TaskItem } from "./types";
 
@@ -40,6 +42,8 @@ export function DayPanel({
   onCreate,
   onUpdate,
   onDelete,
+  onSelectEvent,
+  onScheduleMeeting,
 }: {
   dayKey: string | null;
   events: EventItem[];
@@ -51,6 +55,9 @@ export function DayPanel({
   onCreate: (values: EventFormValues) => Promise<string | null>;
   onUpdate: (eventId: string, values: EventFormValues) => Promise<string | null>;
   onDelete: (eventId: string) => Promise<string | null>;
+  /** Opens a meeting's details over the panel. */
+  onSelectEvent: (event: EventItem, rect: AnchorRect) => void;
+  onScheduleMeeting: (dayKey: string) => void;
 }) {
   const isDesktop = useIsDesktop();
   const [mounted, setMounted] = useState(false);
@@ -84,13 +91,18 @@ export function DayPanel({
     calendars.find((c) => c.canEdit)?.id ??
     "";
 
-  const dayEvents = [...events].sort((a, b) => {
+  const sorted = [...events].sort((a, b) => {
     if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
     return new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
   });
+  const dayMeetings = sorted.filter((e) => e.isMeeting);
+  const dayEvents = sorted.filter((e) => !e.isMeeting);
 
+  // Deadlines first in the order they fall, then the ongoing work.
   const dayTasks = [...tasks].sort(
-    (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+    (a, b) =>
+      Number(a.ongoing) - Number(b.ongoing) ||
+      new Date(a.endAt).getTime() - new Date(b.endAt).getTime()
   );
 
   async function run(fn: () => Promise<string | null>, onDone: () => void) {
@@ -135,9 +147,15 @@ export function DayPanel({
                   })}
                 </p>
                 <p className="mt-0.5 text-[12px] text-faint">
-                  {dayEvents.length} {dayEvents.length === 1 ? "event" : "events"}
-                  {" · "}
-                  {dayTasks.length} due
+                  {[
+                    dayMeetings.length > 0 &&
+                      `${dayMeetings.length} ${dayMeetings.length === 1 ? "meeting" : "meetings"}`,
+                    dayEvents.length > 0 &&
+                      `${dayEvents.length} ${dayEvents.length === 1 ? "event" : "events"}`,
+                    `${dayTasks.length} ${dayTasks.length === 1 ? "task" : "tasks"}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </p>
               </div>
               <button
@@ -180,19 +198,72 @@ export function DayPanel({
                       />
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError(null);
-                        setCreating(true);
-                      }}
-                      className="pill w-full justify-center"
-                    >
-                      <CalendarPlus size={14} />
-                      New event
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onScheduleMeeting(dayKey)}
+                        className="inline-flex h-[34px] flex-1 items-center justify-center gap-2 rounded-full bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                      >
+                        <Users size={14} />
+                        Schedule meeting
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError(null);
+                          setCreating(true);
+                        }}
+                        title="Something on the calendar with nobody invited: leave, a launch, a reminder"
+                        className="pill"
+                      >
+                        <CalendarPlus size={14} />
+                        Event
+                      </button>
+                    </div>
                   )}
                 </div>
+              )}
+
+              {dayMeetings.length > 0 && (
+                <section className="mb-5">
+                  <h3 className="mb-2 px-1 text-[11px] uppercase tracking-[0.12em] text-faint">
+                    Meetings
+                  </h3>
+                  <div className="flex flex-col gap-1.5">
+                    {dayMeetings.map((event) => (
+                      <button
+                        key={event.id}
+                        type="button"
+                        onClick={(e) =>
+                          onSelectEvent(event, toZoomed(e.currentTarget.getBoundingClientRect(), e.currentTarget))
+                        }
+                        className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-white transition-[filter] hover:brightness-110 ${
+                          event.myStatus === "DECLINED" ? "opacity-50" : ""
+                        }`}
+                        style={{ backgroundColor: `color-mix(in oklab, ${event.color} 72%, #000)` }}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-black/20">
+                          {event.mode === "online" ? <Video size={14} /> : <Building2 size={14} />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium">{event.title}</span>
+                          <span className="block truncate text-[11px] tabular-nums text-white/75">
+                            {formatIST(new Date(event.startAt), { hour: "2-digit", minute: "2-digit" })}
+                            {" – "}
+                            {formatIST(new Date(event.endAt), { hour: "2-digit", minute: "2-digit" })}
+                            {" · "}
+                            {placeLabel(event.mode ?? "office", event.location, event.meetingUrl)}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right text-[11px] text-white/80">
+                          {event.myStatus && event.myStatus !== "ACCEPTED"
+                            ? RSVP_LABELS[event.myStatus]
+                            : `${event.attendees.length} ${event.attendees.length === 1 ? "person" : "people"}`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
               )}
 
               {dayEvents.length > 0 && (
@@ -321,21 +392,51 @@ export function DayPanel({
               {dayTasks.length > 0 && (
                 <section>
                   <h3 className="mb-2 px-1 text-[11px] uppercase tracking-[0.12em] text-faint">
-                    Due this day
+                    Tasks
                   </h3>
                   <div className="list">
                     {/* One child, so .list's own separators stay out of the way
                         of the hairlines TaskRow already draws. */}
                     <div className="px-1.5">
-                      {dayTasks.map((task) => (
-                        <TaskRow key={task.id} task={task.row} />
-                      ))}
+                      {dayTasks.map((task) =>
+                        task.canOpen ? (
+                          <TaskRow
+                            key={task.id}
+                            task={task.ongoing ? { ...task.row, dueAtLabel: "Ongoing" } : task.row}
+                          />
+                        ) : (
+                          // Someone else's task outside what this viewer can
+                          // open: what it is and whose, nothing to click.
+                          <div
+                            key={task.id}
+                            className="flex min-h-8 items-center gap-2.5 border-b border-border px-2 py-1.5 last:border-0"
+                            title="Someone else's task. Ask them, or an admin, to share it."
+                          >
+                            <span className="h-3.5 w-3.5 shrink-0 rounded-sm border border-dashed border-[var(--border-strong)]" />
+                            <span className="min-w-0 flex-1">
+                              <span
+                                className={`block truncate text-[13px] ${
+                                  task.row.status === "DONE" ? "text-faint line-through" : ""
+                                }`}
+                              >
+                                {task.row.title}
+                              </span>
+                              <span className="block truncate text-[11px] text-faint">
+                                {task.row.assignees.join(", ") || "Unassigned"}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-[11px] tabular-nums text-faint">
+                              {task.ongoing ? "Ongoing" : task.row.dueAtLabel}
+                            </span>
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
                 </section>
               )}
 
-              {dayEvents.length === 0 && dayTasks.length === 0 && (
+              {dayMeetings.length === 0 && dayEvents.length === 0 && dayTasks.length === 0 && (
                 <p className="px-1 py-8 text-center text-[13px] text-muted-foreground">
                   Nothing on this day yet.
                 </p>

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { digestKindOf, type NotificationView } from "@/lib/notifications";
+import { istDayKey } from "@/lib/dates";
 
 export async function getUnreadCount(orgId: string, userId: string) {
   return prisma.notification.count({
@@ -15,7 +16,7 @@ export async function getUnreadCount(orgId: string, userId: string) {
 /** Comment notifications used to carry their task in the body, in brackets. */
 const ON_TASK = /\s*\(on "[^"]*"\)\s*$/;
 
-type StoredData = { actorId?: unknown; digest?: unknown } | null;
+type StoredData = { actorId?: unknown; digest?: unknown; change?: unknown } | null;
 
 /**
  * A user's notifications, ready to draw: who, which task, which digest.
@@ -45,6 +46,7 @@ export async function getNotifications(
       createdAt: true,
       readAt: true,
       task: { select: { id: true, title: true, deletedAt: true } },
+      event: { select: { id: true, title: true, startAt: true, deletedAt: true } },
     },
   });
 
@@ -156,7 +158,28 @@ export async function getNotifications(
       digest:
         r.type === "DIGEST" ? digestKindOf((r.data as StoredData)?.digest, r.body) : null,
       recurring: isRecurring(r),
-      href: r.type === "MEMBER_JOIN_REQUEST" ? "/admin/members" : null,
+      event: r.event
+        ? {
+            id: r.event.id,
+            title: r.event.title,
+            startAt: r.event.startAt.toISOString(),
+            deleted: r.event.deletedAt !== null,
+          }
+        : null,
+      change:
+        (r.data as StoredData)?.change === "cancelled"
+          ? "cancelled"
+          : (r.data as StoredData)?.change === "moved"
+            ? "moved"
+            : null,
+      // A meeting opens on its day in the calendar; one that was called off
+      // has nowhere to go.
+      href:
+        r.type === "MEMBER_JOIN_REQUEST"
+          ? "/admin/members"
+          : r.event && !r.event.deletedAt
+            ? `/calendar?view=day&date=${istDayKey(r.event.startAt)}`
+            : null,
     };
   });
 }

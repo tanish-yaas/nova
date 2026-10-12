@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma";
 import { buildTaskScope } from "@/server/services/tasks";
-import { getVisibleCalendarIds } from "@/server/services/calendar";
+import { getVisibleCalendarIds, readableEventFor } from "@/server/services/calendar";
 import {
   addDaysToKey,
   formatIST,
@@ -393,6 +393,8 @@ export async function buildWorkReport(
             ...(filters.q
               ? { title: { contains: filters.q, mode: "insensitive" as const } }
               : {}),
+            // Every calendar is visible now; a private event's title is not.
+            AND: [readableEventFor(userId)],
             OR: [
               { calendar: { ownerId: { in: ids } } },
               {
