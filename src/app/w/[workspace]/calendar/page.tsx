@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma";
 import { getCurrentContext } from "@/server/auth/session";
 import { eventsInvolving, getCalendarsForUser } from "@/server/services/calendar";
-import { buildTaskScope } from "@/server/services/tasks";
+import { NOT_MEETING_TASK, buildTaskScope } from "@/server/services/tasks";
 import { EVENT_INCLUDE, getWorkspacePeople, toEventItem } from "@/server/services/meetings";
 import { CalendarShell } from "@/components/calendar/calendar-shell";
 import {
@@ -91,7 +91,7 @@ export default async function CalendarPage({
     ? { organizationId: orgId, deletedAt: null }
     : { organizationId: orgId, deletedAt: null, assignments: { some: { userId: { in: inView } } } };
 
-  const [events, tasks, openTasks, shareRows] = await Promise.all([
+  const [events, tasks, openTasks, shareRows, labels] = await Promise.all([
     calendarIds.length > 0
       ? prisma.calendarEvent.findMany({
           where: {
@@ -114,6 +114,8 @@ export default async function CalendarPage({
         AND: [
           theirs,
           startsBeforeEnd,
+          // The meeting itself is on the calendar; its task would be a copy.
+          NOT_MEETING_TASK,
           {
             OR: [
               { dueAt: { gte: rangeStart } },
@@ -161,6 +163,11 @@ export default async function CalendarPage({
           orderBy: { createdAt: "asc" },
         })
       : Promise.resolve([]),
+    prisma.label.findMany({
+      where: { organizationId: orgId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, color: true },
+    }),
   ]);
 
   // Which of those tasks this viewer could already open. The rest are other
@@ -259,6 +266,7 @@ export default async function CalendarPage({
       calendars={calendars}
       openTasks={openTasks}
       people={people}
+      labels={labels}
       inView={everyone ? "all" : inView}
       selfId={userId}
       members={people.filter((p) => p.userId !== userId).map((p) => ({ userId: p.userId, name: p.name }))}

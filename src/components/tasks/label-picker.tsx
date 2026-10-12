@@ -139,7 +139,10 @@ export function LabelPicker({
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.14 }}
-      className="overlay fixed z-[96] p-2"
+      // Marks a layer above any dialog this sits in, so Escape closes this
+      // dropdown and not the dialog with the half-filled form under it.
+      data-layer="dropdown"
+      className="overlay fixed z-[98] p-2"
       style={{ left: position.left, top: position.top, width: WIDTH }}
     >
       <div className="max-h-52 overflow-y-auto">

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma";
-import { buildTaskScope } from "@/server/services/tasks";
+import { NOT_MEETING_TASK, buildTaskScope } from "@/server/services/tasks";
 import { getVisibleCalendarIds, readableEventFor } from "@/server/services/calendar";
 import {
   addDaysToKey,
@@ -355,7 +355,9 @@ export async function buildWorkReport(
   if (label) attr.push({ labels: { some: { labelId: label.id } } });
   if (filters.q) attr.push({ title: { contains: filters.q, mode: "insensitive" } });
 
-  const taskFilter: Prisma.TaskWhereInput = { AND: [visible, ...attr] };
+  // A meeting is reported as the meeting; its board task would be a second
+  // line for the same hour.
+  const taskFilter: Prisma.TaskWhereInput = { AND: [visible, NOT_MEETING_TASK, ...attr] };
 
   const wantMeetings = !tasksOnly(filters);
 

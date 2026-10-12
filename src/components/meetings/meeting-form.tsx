@@ -13,6 +13,7 @@ import {
   type MeetingMode,
 } from "@/lib/meetings";
 import type { MeetingInput } from "@/lib/validators/meeting";
+import { LabelPicker, type LabelOption } from "@/components/tasks/label-picker";
 
 export type MeetingPerson = {
   userId: string;
@@ -31,6 +32,7 @@ export type MeetingFormValues = {
   place: string;
   link: string;
   attendeeIds: string[];
+  labelIds: string[];
 };
 
 /** The form's values as the meeting actions take them. */
@@ -46,6 +48,7 @@ export function toMeetingInput(v: MeetingFormValues): MeetingInput {
     place: v.place,
     link: v.link,
     attendeeIds: v.attendeeIds,
+    labelIds: v.labelIds,
   };
 }
 
@@ -71,6 +74,7 @@ const label = "mb-1.5 block text-[11px] uppercase tracking-[0.12em] text-faint";
 export function MeetingForm({
   initial,
   people,
+  labels = [],
   selfId,
   submitLabel,
   onSubmit,
@@ -79,6 +83,8 @@ export function MeetingForm({
 }: {
   initial: MeetingFormValues;
   people: MeetingPerson[];
+  /** The workspace's labels, for tagging the meeting. */
+  labels?: LabelOption[];
   selfId: string;
   submitLabel: string;
   onSubmit: (values: MeetingFormValues) => Promise<string | null>;
@@ -90,6 +96,8 @@ export function MeetingForm({
   const [finding, setFinding] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Grows when a label is made from the picker, so it shows up straight away.
+  const [labelOptions, setLabelOptions] = useState<LabelOption[]>(labels);
 
   const set = <K extends keyof MeetingFormValues>(key: K, value: MeetingFormValues[K]) =>
     setV((prev) => ({ ...prev, [key]: value }));
@@ -323,6 +331,16 @@ export function MeetingForm({
             </p>
           </div>
         )}
+      </div>
+
+      <div>
+        <span className={label}>Labels</span>
+        <LabelPicker
+          value={v.labelIds}
+          options={labelOptions}
+          onChange={(ids) => set("labelIds", ids)}
+          onCreated={(created) => setLabelOptions((prev) => [...prev, created])}
+        />
       </div>
 
       <div>

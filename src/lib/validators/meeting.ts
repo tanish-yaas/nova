@@ -17,6 +17,8 @@ export const meetingInputSchema = z.object({
   link: z.string().trim().max(500).optional().default(""),
   /** Everyone invited besides the organizer. */
   attendeeIds: z.array(z.string().min(1)).max(100).default([]),
+  /** Labels, carried by the meeting's task so the board can show them. */
+  labelIds: z.array(z.string().min(1)).max(20).default([]),
 });
 
 export type MeetingInput = z.input<typeof meetingInputSchema>;

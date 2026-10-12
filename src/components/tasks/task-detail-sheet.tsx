@@ -169,6 +169,7 @@ function meetingFromTask(detail: TaskDetailData): MeetingFormValues {
     place: "",
     link: "",
     attendeeIds: detail.assignees.map((a) => a.id).filter((id) => id !== detail.viewerId),
+    labelIds: detail.labels.map((l) => l.id),
   };
 }
 
@@ -211,7 +212,11 @@ export function TaskDetailSheet({
   useEffect(() => {
     if (!taskId) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Something open on top of the sheet (the meeting dialog, a dropdown)
+      // takes this Escape; the sheet closes on the next one.
+      if (document.querySelector("[data-layer]")) return;
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -260,7 +265,9 @@ export function TaskDetailSheet({
                 <p className="truncate text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                   {detail?.parent
                     ? `Subtask of ${detail.parent.title}`
-                    : "Task"}
+                    : detail?.meeting
+                      ? "Meeting"
+                      : "Task"}
                 </p>
                 <p className="mt-0.5 truncate text-sm">
                   {detail?.title ?? "Loading…"}
@@ -270,7 +277,7 @@ export function TaskDetailSheet({
                 {/* Some "tasks" are really a time to get people in a room.
                     This makes it one: same name, notes and people, on the
                     calendar with invites, and the task goes away. */}
-                {detail?.canEdit && !detail.parent && (
+                {detail?.canEdit && !detail.parent && !detail.meeting && (
                   <button
                     type="button"
                     onClick={() => setConverting(true)}
@@ -544,7 +551,7 @@ export function TaskDetailSheet({
         <MeetingDialog
           open={converting}
           heading="Turn into meeting"
-          note={`"${detail.title}" becomes a meeting with the same name, notes and people, and comes off the task list.`}
+          note={`"${detail.title}" becomes a meeting with the same name, notes, labels and people. It stays on the board, as a meeting.`}
           initial={meetingFromTask(detail)}
           people={detail.allMembers.map((m) => ({
             userId: m.id,
@@ -552,6 +559,7 @@ export function TaskDetailSheet({
             avatarUrl: m.image,
             image: null,
           }))}
+          labels={detail.allLabels}
           selfId={detail.viewerId}
           submitLabel="Make it a meeting"
           onSubmit={async (values) => {
@@ -712,66 +720,93 @@ function Fields({
         </label>
       </div>
 
+      {detail.meeting ? (
+        // A meeting's time and place belong to the meeting. Shown here, changed
+        // there, so the card and the calendar can never disagree.
+        <div className="mt-3 rounded-lg border border-[color-mix(in_oklab,var(--primary)_35%,transparent)] bg-[color-mix(in_oklab,var(--primary)_8%,transparent)] px-3 py-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Meeting</p>
+          <p className="mt-1 text-[13px] tabular-nums">{detail.meeting.when}</p>
+          <p className="text-[12px] text-muted-foreground">{detail.meeting.place}</p>
+          <div className="mt-2 flex items-center gap-2">
+            {detail.meeting.joinUrl && (
+              <a
+                href={detail.meeting.joinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="pill pill-sm"
+              >
+                Join
+              </a>
+            )}
+            <span className="text-[11px] text-faint">
+              Time, place and people change from the meeting on the calendar or Tasks tab.
+            </span>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* Both were read-only text before, which meant a task could be created
-          with the wrong date and never corrected without deleting it. */}
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Due
-          </span>
-          {/* Still the "YYYY-MM-DDTHH:mm" that toLocalInput / fromLocalInput
-              speak — the server runs in UTC and a raw value lands 5.5h out. */}
-          <DateTimeField
-            value={dueAt}
-            disabled={!detail.canEdit}
-            onChange={setDueAt}
-            defaultHour={APP_CONFIG.defaultDueHour}
-            onCommit={(next) => {
-              if (next === detail.dueAtInput) return;
-              save({ dueAt: next });
-            }}
-          />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Start
-          </span>
-          {/* Gives the task a span on the calendar instead of one day. */}
-          <DateTimeField
-            value={startAt}
-            disabled={!detail.canEdit}
-            onChange={setStartAt}
-            defaultHour={9}
-            onCommit={(next) => {
-              if (next === detail.startAtInput) return;
-              save({ startAt: next });
-            }}
-          />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Estimate (min)
-          </span>
-          <input
-            type="number"
-            min={0}
-            value={estimate}
-            disabled={!detail.canEdit}
-            placeholder="Not set"
-            onChange={(e) => setEstimate(e.target.value)}
-            onBlur={() => {
-              if (estimate === detail.estimatedMinutes) return;
-              save({ estimatedMinutes: estimate });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-            }}
-            className={field}
-          />
-        </label>
-      </div>
+            with the wrong date and never corrected without deleting it. */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Due
+            </span>
+            {/* Still the "YYYY-MM-DDTHH:mm" that toLocalInput / fromLocalInput
+                speak — the server runs in UTC and a raw value lands 5.5h out. */}
+            <DateTimeField
+              value={dueAt}
+              disabled={!detail.canEdit}
+              onChange={setDueAt}
+              defaultHour={APP_CONFIG.defaultDueHour}
+              onCommit={(next) => {
+                if (next === detail.dueAtInput) return;
+                save({ dueAt: next });
+              }}
+            />
+          </label>
+  
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Start
+            </span>
+            {/* Gives the task a span on the calendar instead of one day. */}
+            <DateTimeField
+              value={startAt}
+              disabled={!detail.canEdit}
+              onChange={setStartAt}
+              defaultHour={9}
+              onCommit={(next) => {
+                if (next === detail.startAtInput) return;
+                save({ startAt: next });
+              }}
+            />
+          </label>
+  
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Estimate (min)
+            </span>
+            <input
+              type="number"
+              min={0}
+              value={estimate}
+              disabled={!detail.canEdit}
+              placeholder="Not set"
+              onChange={(e) => setEstimate(e.target.value)}
+              onBlur={() => {
+                if (estimate === detail.estimatedMinutes) return;
+                save({ estimatedMinutes: estimate });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              className={field}
+            />
+          </label>
+        </div>
+        </>
+      )}
 
       {detail.teams.length > 0 && (
         <label className="mt-3 flex flex-col gap-1">
@@ -811,6 +846,12 @@ function Fields({
           Assignees
         </p>
 
+        {detail.meeting && (
+          <p className="mt-1 text-[11px] text-faint">
+            Everyone invited who hasn&apos;t declined. Change who&apos;s coming from the meeting.
+          </p>
+        )}
+
         {/* A roster of toggles rather than a dropdown: the workspace is small,
             and the whole point is seeing at a glance who is on this. The first
             one selected owns the task, which is how the composers create them. */}
@@ -822,7 +863,7 @@ function Fields({
                 key={member.id}
                 type="button"
                 data-on={on}
-                disabled={!detail.canEdit || pending}
+                disabled={!detail.canEdit || pending || !!detail.meeting}
                 onClick={() =>
                   setAssignees(
                     on

@@ -7,12 +7,15 @@ import { buildTaskScope } from "@/server/services/tasks";
 import { TaskBoard } from "@/components/dashboard/task-board";
 import {
   columnForStatus,
+  type BoardMeeting,
   type BoardSubtask,
   type BoardTask,
 } from "@/components/dashboard/board-columns";
+import { meetingMode, placeLabel } from "@/lib/meetings";
 import {
   addDaysToKey,
   daysBetweenKeys,
+  formatDateIST,
   formatIST,
   istDayKey,
   istKeyToDate,
@@ -64,6 +67,44 @@ function Stat({
       </div>
     </div>
   );
+}
+
+/** A meeting's card line: when, where, who, and whether it is on now. */
+function boardMeeting(
+  event: {
+    startAt: Date;
+    endAt: Date;
+    location: string | null;
+    meetingUrl: string | null;
+    _count: { attendees: number };
+  } | null,
+  todayKey: string,
+  now: Date
+): BoardMeeting | null {
+  if (!event) return null;
+  const mode = meetingMode(event.location, event.meetingUrl);
+  const t = (d: Date) =>
+    formatIST(d, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const day = daysBetweenKeys(todayKey, istDayKey(event.startAt));
+  const dayLabel =
+    day === 0
+      ? "Today"
+      : day === 1
+        ? "Tomorrow"
+        : day === -1
+          ? "Yesterday"
+          : `${formatIST(event.startAt, { weekday: "short" })} ${formatDateIST(event.startAt)}`;
+  const ended = event.endAt < now;
+
+  return {
+    when: `${dayLabel} · ${t(event.startAt)}–${t(event.endAt)}`,
+    mode,
+    place: placeLabel(mode, event.location, event.meetingUrl),
+    joinUrl: mode === "online" && !ended ? event.meetingUrl : null,
+    people: event._count.attendees,
+    ended,
+    live: event.startAt <= now && !ended,
+  };
 }
 
 export default async function DashboardPage() {
@@ -172,6 +213,18 @@ export default async function DashboardPage() {
         },
         labels: {
           select: { label: { select: { id: true, name: true, color: true } } },
+        },
+        // The meeting this task stands behind, if it is one.
+        events: {
+          where: { deletedAt: null, attendees: { some: { isOrganizer: true } } },
+          take: 1,
+          select: {
+            startAt: true,
+            endAt: true,
+            location: true,
+            meetingUrl: true,
+            _count: { select: { attendees: true } },
+          },
         },
       },
     }),
@@ -295,8 +348,18 @@ export default async function DashboardPage() {
           .map((a) => a.user.name?.split(" ")[0] ?? "")
           .filter(Boolean),
         subtasks: subtasksByParent.get(t.id) ?? [],
+        meeting: boardMeeting(t.events[0] ?? null, todayKey, now),
       };
     });
+
+  // One order for both kinds of card: a task by when it is due, a meeting by
+  // when it starts, so a 14:00 meeting sits between the tasks around it
+  // instead of trailing every dated task because it has no due date.
+  const whenOf = (t: BoardTask) => {
+    const row = parentRows.find((r) => r.id === t.id);
+    return (row?.dueAt ?? row?.events[0]?.startAt)?.getTime() ?? Number.POSITIVE_INFINITY;
+  };
+  boardTasks.sort((a, b) => whenOf(a) - whenOf(b));
 
   // Built from whose tasks are actually in view, not from the whole roster.
   // A viewer whose scope is team-level would otherwise get a checkbox for

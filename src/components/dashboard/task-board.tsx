@@ -6,7 +6,7 @@ import {
 
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
-import { Check, ChevronRight, Flag, Plus } from "lucide-react";
+import { Building2, Check, ChevronRight, Flag, Plus, Users, Video } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useToast } from "@/components/ui/toast";
 import { setTaskStatus } from "@/server/actions/tasks";
@@ -282,6 +282,7 @@ function Card({
 }) {
   const accent = accentFor(task);
   const [expanded, setExpanded] = useState(false);
+  const meeting = task.meeting;
 
   const doneSubtasks = task.subtasks.filter((s) => s.done).length;
   const totalSubtasks = task.subtasks.length;
@@ -307,19 +308,34 @@ function Card({
       }}
       role="button"
       tabIndex={0}
-      // The accent is carried by a left stripe and a dot rather than a tinted
-      // background: at this card size a wash flattens the text contrast, and
-      // the stripe still reads when several cards stack up.
-      style={{
-        borderLeftColor: accent,
-        backgroundColor: `color-mix(in oklab, ${accent} 7%, color-mix(in oklab, var(--card) 78%, transparent))`,
-      }}
+      // A task carries its accent in a left stripe and a dot: at this card
+      // size a wash flattens the text contrast. A meeting is the exception,
+      // filled with its colour the way it is on the calendar, so the day's
+      // fixed points read apart from the work around them.
+      style={
+        meeting
+          ? {
+              borderLeftColor: `color-mix(in oklab, ${accent} 90%, white)`,
+              backgroundColor: `color-mix(in oklab, ${accent} 72%, #000)`,
+              color: "#fff",
+            }
+          : {
+              borderLeftColor: accent,
+              backgroundColor: `color-mix(in oklab, ${accent} 7%, color-mix(in oklab, var(--card) 78%, transparent))`,
+            }
+      }
       className={`cursor-grab rounded-lg border border-l-[3px] border-[color-mix(in_oklab,white_8%,transparent)] px-2.5 py-2 transition-opacity active:cursor-grabbing ${
-        dragging ? "opacity-40" : ""
+        dragging ? "opacity-40" : meeting?.ended && task.status !== "DONE" ? "opacity-75" : ""
       }`}
     >
       <div className="flex items-start gap-1.5">
-        {task.blocked ? (
+        {meeting ? (
+          meeting.mode === "online" ? (
+            <Video size={12} className="mt-[3px] shrink-0 text-white/85" aria-label="Online meeting" />
+          ) : (
+            <Building2 size={12} className="mt-[3px] shrink-0 text-white/85" aria-label="Meeting in the office" />
+          )
+        ) : task.blocked ? (
           <Flag
             size={11}
             className="mt-[3px] shrink-0 text-[var(--status-red)]"
@@ -332,23 +348,66 @@ function Card({
           />
         )}
         <p className="min-w-0 flex-1 text-[13px] leading-snug">{task.title}</p>
+        {meeting?.live && (
+          <span className="shrink-0 rounded-full bg-white/20 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.1em]">
+            Now
+          </span>
+        )}
       </div>
+
+      {meeting && (
+        <div className="mt-1 flex flex-col gap-0.5 pl-[18px] text-[11px] leading-snug text-white/80">
+          <span className="tabular-nums">{meeting.when}</span>
+          <span className="flex items-center gap-1.5 truncate">
+            <span className="truncate">{meeting.place}</span>
+            {meeting.people > 1 && (
+              <span className="flex shrink-0 items-center gap-0.5">
+                · <Users size={10} /> {meeting.people}
+              </span>
+            )}
+          </span>
+          {meeting.joinUrl && (
+            <a
+              href={meeting.joinUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              draggable={false}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-white/18 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-white/28"
+            >
+              <Video size={10} /> Join
+            </a>
+          )}
+        </div>
+      )}
 
       {task.labels.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1">
-          {task.labels.map((label) => (
-            <span
-              key={label.id}
-              className="chip h-[18px] px-1.5 text-[10px]"
-              style={{
-                backgroundColor: `color-mix(in oklab, ${label.color} 20%, transparent)`,
-                borderColor: `color-mix(in oklab, ${label.color} 40%, transparent)`,
-                color: `color-mix(in oklab, ${label.color} 55%, white)`,
-              }}
-            >
-              {label.name}
-            </span>
-          ))}
+          {task.labels.map((label) =>
+            meeting ? (
+              // On a filled card a tinted chip vanishes into the fill, so the
+              // label's colour moves to a dot on a light chip.
+              <span
+                key={label.id}
+                className="chip h-[18px] gap-1 border-white/25 bg-white/15 px-1.5 text-[10px] text-white"
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: label.color }} />
+                {label.name}
+              </span>
+            ) : (
+              <span
+                key={label.id}
+                className="chip h-[18px] px-1.5 text-[10px]"
+                style={{
+                  backgroundColor: `color-mix(in oklab, ${label.color} 20%, transparent)`,
+                  borderColor: `color-mix(in oklab, ${label.color} 40%, transparent)`,
+                  color: `color-mix(in oklab, ${label.color} 55%, white)`,
+                }}
+              >
+                {label.name}
+              </span>
+            )
+          )}
         </div>
       )}
 
@@ -437,7 +496,7 @@ function Card({
           )}
 
           {task.assignees.length > 0 && (
-            <span className="ml-auto truncate text-[10px] text-faint">
+            <span className={`ml-auto truncate text-[10px] ${meeting ? "text-white/70" : "text-faint"}`}>
               {task.assignees.join(", ")}
             </span>
           )}

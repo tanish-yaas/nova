@@ -7,7 +7,15 @@ import type { CalendarPerson, EventItem } from "@/components/calendar/types";
 
 /** Everything an event needs read alongside it to be drawn. */
 export const EVENT_INCLUDE = {
-  task: { select: { id: true, title: true } },
+  task: {
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      deletedAt: true,
+      labels: { select: { label: { select: { id: true, name: true, color: true } } } },
+    },
+  },
   calendar: {
     select: {
       id: true,
@@ -149,6 +157,8 @@ export function toEventItem(
       : null,
     myStatus: mine ? (mine.status as AttendeeStatus) : null,
     busy,
+    labels: busy || !e.task || e.task.deletedAt ? [] : e.task.labels.map((l) => l.label),
+    taskStatus: busy || !e.task || e.task.deletedAt ? null : e.task.status,
   };
 }
 

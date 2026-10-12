@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 import { toLocalInput, localInputFromKey } from "@/lib/dates";
 import { meetingMode } from "@/lib/meetings";
 import type { EventItem } from "@/components/calendar/types";
+import type { LabelOption } from "@/components/tasks/label-picker";
 import {
   MeetingForm,
   minutesBetween,
@@ -25,6 +26,7 @@ export function blankMeeting(dayKey: string, startMinutes: number, durationMinut
     place: "",
     link: "",
     attendeeIds: [],
+    labelIds: [],
   };
 }
 
@@ -53,6 +55,7 @@ export function meetingValues(event: EventItem): MeetingFormValues {
     place,
     link: event.meetingUrl,
     attendeeIds: event.attendees.filter((a) => !a.isOrganizer && a.userId).map((a) => a.userId!),
+    labelIds: event.labels.map((l) => l.id),
   };
 }
 
@@ -66,6 +69,7 @@ export function MeetingDialog({
   heading,
   initial,
   people,
+  labels,
   selfId,
   submitLabel,
   note,
@@ -76,6 +80,7 @@ export function MeetingDialog({
   heading: string;
   initial: MeetingFormValues;
   people: MeetingPerson[];
+  labels?: LabelOption[];
   selfId: string;
   submitLabel: string;
   /** A line under the heading, e.g. what happens to the task being converted. */
@@ -93,7 +98,10 @@ export function MeetingDialog({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // A dropdown open inside the form (labels) takes this Escape for itself.
+      if (document.querySelector('[data-layer="dropdown"]')) return;
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -115,6 +123,7 @@ export function MeetingDialog({
           <motion.div
             role="dialog"
             aria-label={heading}
+            data-layer="dialog"
             initial={{ opacity: 0, y: 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -139,6 +148,7 @@ export function MeetingDialog({
             <MeetingForm
               initial={initial}
               people={people}
+              labels={labels}
               selfId={selfId}
               submitLabel={submitLabel}
               onSubmit={onSubmit}

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { buildTaskScope } from "@/server/services/tasks";
 import { formatIST, toLocalInput } from "@/lib/dates";
+import { meetingMode, placeLabel } from "@/lib/meetings";
 import { isStorageConfigured } from "@/lib/storage";
 
 export type CommentNode = {
@@ -90,6 +91,14 @@ export type TaskDetailData = {
   storageReady: boolean;
   /** Who is looking: the organizer if this task is turned into a meeting. */
   viewerId: string;
+  /** Set when this task stands behind a meeting: its time, place and people
+      belong to the meeting, so the sheet shows those instead of editing them. */
+  meeting: {
+    eventId: string;
+    when: string;
+    place: string;
+    joinUrl: string | null;
+  } | null;
 };
 
 const DONE_STATUSES = ["DONE", "CANCELLED"];
@@ -143,6 +152,11 @@ export async function getTaskDetail(
   permissions: Set<string>
 ): Promise<TaskDetailData | null> {
   const scope = await buildTaskScope(orgId, userId, permissions);
+
+  const meetingRow = await prisma.calendarEvent.findFirst({
+    where: { taskId, deletedAt: null, organizationId: orgId, attendees: { some: { isOrganizer: true } } },
+    select: { id: true, startAt: true, endAt: true, location: true, meetingUrl: true },
+  });
 
   const task = await prisma.task.findFirst({
     where: { ...scope, id: taskId },
@@ -355,5 +369,17 @@ export async function getTaskDetail(
     // components with the env to hand.
     storageReady: isStorageConfigured(),
     viewerId: userId,
+    meeting: meetingRow
+      ? (() => {
+          const mode = meetingMode(meetingRow.location, meetingRow.meetingUrl);
+          const t = (d: Date) => formatIST(d, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+          return {
+            eventId: meetingRow.id,
+            when: `${formatIST(meetingRow.startAt, { weekday: "short", day: "2-digit" })} · ${t(meetingRow.startAt)}–${t(meetingRow.endAt)}`,
+            place: placeLabel(mode, meetingRow.location, meetingRow.meetingUrl),
+            joinUrl: mode === "online" && meetingRow.endAt > new Date() ? meetingRow.meetingUrl : null,
+          };
+        })()
+      : null,
   };
 }

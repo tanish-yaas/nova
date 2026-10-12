@@ -32,6 +32,10 @@ export type EventItem = {
   myStatus: AttendeeStatus | null;
   /** Someone else's private event: a block of busy time, no details. */
   busy: boolean;
+  /** A meeting's labels, carried by its task. */
+  labels: { id: string; name: string; color: string }[];
+  /** Where the meeting's card sits on the board: TODO, IN_PROGRESS, DONE... */
+  taskStatus: string | null;
 };
 
 export type EventPerson = {

@@ -38,6 +38,32 @@ export function defaultStartAt(dueAt: Date | null, now = new Date()): Date {
   return dueAt && dueAt < now ? dueAt : now;
 }
 
+/**
+ * Tasks that stand behind a meeting.
+ *
+ * Every meeting has a task of its own, linked through CalendarEvent.taskId:
+ * that is what puts a meeting on the board, lets it be dragged between
+ * columns and labelled, and carries its comments. Lists that already show the
+ * meeting itself (the Tasks tab, the calendar, Reports) leave these out so a
+ * meeting never appears twice. The organizer row is what marks an event as a
+ * meeting; a plain event linked to a task does not count.
+ */
+export const MEETING_TASK: Prisma.TaskWhereInput = {
+  events: { some: { deletedAt: null, attendees: { some: { isOrganizer: true } } } },
+};
+
+export const NOT_MEETING_TASK: Prisma.TaskWhereInput = {
+  events: { none: { deletedAt: null, attendees: { some: { isOrganizer: true } } } },
+};
+
+/** The live meeting a task stands behind, if it is one. */
+export async function meetingForTask(taskId: string) {
+  return prisma.calendarEvent.findFirst({
+    where: { taskId, deletedAt: null, attendees: { some: { isOrganizer: true } } },
+    select: { id: true, startAt: true },
+  });
+}
+
 export async function buildTaskScope(
   orgId: string,
   userId: string,

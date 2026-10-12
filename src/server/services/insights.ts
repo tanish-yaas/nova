@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma";
 import { addDaysToKey, istKeyToDate, istTodayKey } from "@/lib/dates";
+import { NOT_MEETING_TASK } from "@/server/services/tasks";
 
 /**
  * Which tasks an insight is talking about. The text says "3 tasks are overdue";
@@ -69,7 +70,8 @@ export async function getDashboardInsights(
       prisma.task.count({
         where: { ...open, dueAt: { gte: startOfDay, lt: endOfDay } },
       }),
-      prisma.task.count({ where: { ...open, dueAt: null } }),
+      // A meeting's task has no due date on purpose: its time is the meeting's.
+      prisma.task.count({ where: { ...open, dueAt: null, ...NOT_MEETING_TASK } }),
       prisma.task.count({
         where: {
           organizationId: orgId,

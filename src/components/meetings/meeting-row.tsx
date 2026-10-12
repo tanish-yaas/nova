@@ -12,6 +12,7 @@ import type { EventItem } from "@/components/calendar/types";
 import { MeetingDetails } from "./meeting-details";
 import { MeetingDialog, meetingValues } from "./meeting-dialog";
 import { toMeetingInput, type MeetingPerson } from "./meeting-form";
+import type { LabelOption } from "@/components/tasks/label-picker";
 
 const t = (iso: string) =>
   formatIST(new Date(iso), { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -25,11 +26,13 @@ const t = (iso: string) =>
 export function MeetingRow({
   event,
   people,
+  labels,
   selfId,
   showDay = false,
 }: {
   event: EventItem;
   people: MeetingPerson[];
+  labels: LabelOption[];
   selfId: string;
   /** In "Upcoming", the day matters as much as the time. */
   showDay?: boolean;
@@ -78,6 +81,19 @@ export function MeetingRow({
           </span>
         </span>
 
+        {event.labels.length > 0 && (
+          <span className="hidden shrink-0 items-center gap-1 md:flex">
+            {event.labels.slice(0, 2).map((l) => (
+              <span
+                key={l.id}
+                className="inline-flex h-5 items-center gap-1 rounded-full bg-white/15 px-1.5 text-[10px] font-medium"
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: l.color }} />
+                {l.name}
+              </span>
+            ))}
+          </span>
+        )}
         {live && (
           <span className="shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]">
             Now
@@ -131,6 +147,7 @@ export function MeetingRow({
         heading="Edit meeting"
         initial={meetingValues(event)}
         people={people}
+        labels={labels}
         selfId={selfId}
         submitLabel="Save changes"
         note="Anyone you add gets an invite. If the time or place changes, everyone already on it is told."

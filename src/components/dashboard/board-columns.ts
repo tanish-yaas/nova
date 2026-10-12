@@ -101,4 +101,20 @@ export type BoardTask = {
   /** Children of this task, folded into the card rather than loose on the
       board. Empty for a task that has none, and for a subtask itself. */
   subtasks: BoardSubtask[];
+  /** Set when this card is a meeting: drawn filled, with its time and place
+      in place of a due date. Moving it moves the meeting's task. */
+  meeting: BoardMeeting | null;
+};
+
+export type BoardMeeting = {
+  /** "Today 14:00–14:45", "Thu 16/10 · 11:00–11:30". Formatted on the server, in IST. */
+  when: string;
+  mode: "office" | "online";
+  place: string;
+  /** Online and not over yet: the card gets a Join link. */
+  joinUrl: string | null;
+  people: number;
+  ended: boolean;
+  /** Happening right now. */
+  live: boolean;
 };

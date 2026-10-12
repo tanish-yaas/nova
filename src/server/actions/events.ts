@@ -250,6 +250,20 @@ export async function moveEvent(eventId: string, newStartLocal: string) {
     },
   });
 
-  revalidateWorkspace("/calendar");
+  // A meeting's task starts when the meeting does, so dragging the meeting
+  // to another slot moves its card's date on the board as well.
+  if (event.taskId) {
+    const isMeeting = await prisma.eventAttendee.count({
+      where: { eventId, isOrganizer: true },
+    });
+    if (isMeeting > 0) {
+      await prisma.task.updateMany({
+        where: { id: event.taskId, organizationId: orgId, deletedAt: null },
+        data: { startAt: newStart },
+      });
+    }
+  }
+
+  revalidateWorkspace("/calendar", "/tasks", "/");
   return { ok: true };
 }

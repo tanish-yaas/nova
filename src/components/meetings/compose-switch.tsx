@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/toast";
 import { scheduleMeeting } from "@/server/actions/meetings";
 import { MeetingForm, toMeetingInput, type MeetingPerson } from "./meeting-form";
 import { blankMeeting, nextHalfHour } from "./meeting-dialog";
+import type { LabelOption } from "@/components/tasks/label-picker";
 
 /**
  * The top of the Tasks tab: add a task, or schedule a meeting, from the same
@@ -15,11 +16,13 @@ import { blankMeeting, nextHalfHour } from "./meeting-dialog";
  */
 export function ComposeSwitch({
   people,
+  labels,
   selfId,
   todayKey,
   children,
 }: {
   people: MeetingPerson[];
+  labels: LabelOption[];
   selfId: string;
   todayKey: string;
   children: React.ReactNode;
@@ -67,6 +70,7 @@ export function ComposeSwitch({
             key={round}
             initial={blankMeeting(start.dayKey, start.minutes)}
             people={people}
+            labels={labels}
             selfId={selfId}
             submitLabel="Schedule meeting"
             onSubmit={async (values) => {

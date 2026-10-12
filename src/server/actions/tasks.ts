@@ -7,6 +7,7 @@ import {
   computePriorityScore,
   canMutateTask,
   defaultStartAt,
+  meetingForTask,
 } from "@/server/services/tasks";
 import { fromLocalInput } from "@/lib/dates";
 
@@ -176,8 +177,11 @@ export async function updateTask(
   const parsedStatus = statusSchema.safeParse(input.status);
   if (!parsedStatus.success) return { ok: false as const, error: "Bad status" };
 
-  const dueAt = fromLocalInput(input.dueAt);
-  const rawStart = fromLocalInput(input.startAt);
+  // A meeting's task takes its time from the meeting, so the sheet's date
+  // fields cannot pull the two apart.
+  const meeting = await meetingForTask(taskId);
+  const dueAt = meeting ? null : fromLocalInput(input.dueAt);
+  const rawStart = meeting ? meeting.startAt : fromLocalInput(input.startAt);
   const startAt = rawStart && dueAt && rawStart > dueAt ? null : rawStart;
 
   const estimate = input.estimatedMinutes

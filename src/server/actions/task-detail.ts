@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireContext, requirePermission, revalidateWorkspace } from "@/server/rbac/guard";
 import { getTaskDetail, type TaskDetailData } from "@/server/services/task-detail";
-import { buildTaskScope, canMutateTask } from "@/server/services/tasks";
+import { buildTaskScope, canMutateTask, meetingForTask } from "@/server/services/tasks";
 import {
   MAX_ATTACHMENT_BYTES,
   isStorageConfigured,
@@ -271,6 +271,12 @@ export async function setTaskAssignees(taskId: string, userIds: string[]) {
 
   const task = await canMutateTask(taskId, orgId, userId, ctx.permissions);
   if (!task) return { ok: false as const, error: "Not allowed" };
+
+  // A meeting's people are whoever is invited and coming; the meeting owns
+  // that list, so it is changed there and not here.
+  if (await meetingForTask(taskId)) {
+    return { ok: false as const, error: "Change who's on a meeting from the meeting itself" };
+  }
 
   // Membership is re-checked rather than trusted from the client: this list
   // comes back as ids from a picker, and an id that is not an active member of

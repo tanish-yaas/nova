@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentContext } from "@/server/auth/session";
-import { buildTaskScope } from "@/server/services/tasks";
+import { NOT_MEETING_TASK, buildTaskScope } from "@/server/services/tasks";
 import {
   toLocalInput,
   formatIST,
@@ -21,6 +21,7 @@ import { MeetingRow } from "@/components/meetings/meeting-row";
 import { ComposeSwitch } from "@/components/meetings/compose-switch";
 import type { MeetingPerson } from "@/components/meetings/meeting-form";
 import type { EventItem } from "@/components/calendar/types";
+import type { LabelOption } from "@/components/tasks/label-picker";
 
 /** How far ahead the Upcoming section looks for meetings. */
 const MEETING_DAYS_AHEAD = 14;
@@ -30,6 +31,7 @@ function Section({
   tasks,
   meetings = [],
   people,
+  labels,
   selfId,
   showDay = false,
 }: {
@@ -38,6 +40,7 @@ function Section({
   /** Meetings sit at the top of their section, in time order, filled. */
   meetings?: EventItem[];
   people: MeetingPerson[];
+  labels: LabelOption[];
   selfId: string;
   showDay?: boolean;
 }) {
@@ -55,7 +58,7 @@ function Section({
       </h2>
       <div className="border-t border-border">
         {meetings.map((m) => (
-          <MeetingRow key={m.id} event={m} people={people} selfId={selfId} showDay={showDay} />
+          <MeetingRow key={m.id} event={m} people={people} labels={labels} selfId={selfId} showDay={showDay} />
         ))}
         {tasks.map((t) => (
           <TaskRow key={t.id} task={t} />
@@ -82,7 +85,8 @@ export default async function TasksPage() {
 
   const [tasks, memberRows, labelRows, teamRows, meetings, people] = await Promise.all([
     prisma.task.findMany({
-      where: scope,
+      // A meeting's task is shown as the meeting, filled, above the tasks.
+      where: { AND: [scope, NOT_MEETING_TASK] },
       orderBy: [
         { status: "asc" },
         { priorityScore: "desc" },
@@ -233,7 +237,7 @@ export default async function TasksPage() {
         openCount={open.length}
         doneCount={done.length}
       >
-        <ComposeSwitch people={meetingPeople} selfId={userId} todayKey={todayKey}>
+        <ComposeSwitch people={meetingPeople} labels={labelRows} selfId={userId} todayKey={todayKey}>
           {ctx.permissions.has("ai.use") ? (
             <div className="flex flex-col gap-2">
               <SmartComposer
@@ -274,12 +278,13 @@ export default async function TasksPage() {
           </p>
         )}
 
-        <Section title="Overdue" tasks={overdue} people={meetingPeople} selfId={userId} />
+        <Section title="Overdue" tasks={overdue} people={meetingPeople} labels={labelRows} selfId={userId} />
         <Section
           title="Today"
           tasks={today}
           meetings={todayMeetings}
           people={meetingPeople}
+          labels={labelRows}
           selfId={userId}
         />
         <Section
@@ -287,11 +292,12 @@ export default async function TasksPage() {
           tasks={later}
           meetings={upcomingMeetings}
           people={meetingPeople}
+          labels={labelRows}
           selfId={userId}
           showDay
         />
-        <Section title="No date" tasks={undated} people={meetingPeople} selfId={userId} />
-        <Section title="Done" tasks={done} people={meetingPeople} selfId={userId} />
+        <Section title="No date" tasks={undated} people={meetingPeople} labels={labelRows} selfId={userId} />
+        <Section title="Done" tasks={done} people={meetingPeople} labels={labelRows} selfId={userId} />
       </FocusZone>
     </div>
   );

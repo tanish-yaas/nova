@@ -92,6 +92,7 @@ export function CalendarShell({
   openTasks,
   members,
   people,
+  labels,
   inView,
   selfId,
   workingHoursStart,
@@ -108,6 +109,8 @@ export function CalendarShell({
   members: { userId: string; name: string }[];
   /** Everyone in the workspace, each with the colour they are drawn in. */
   people: CalendarPerson[];
+  /** The workspace's labels, for tagging meetings. */
+  labels: { id: string; name: string; color: string }[];
   /** Whose calendars are on screen: ids, or "all". */
   inView: string[] | "all";
   selfId: string;
@@ -774,6 +777,7 @@ export function CalendarShell({
                         Math.max(15, draft.endMinutes - draft.startMinutes)
                       )}
                       people={people}
+                      labels={labels}
                       selfId={selfId}
                       submitLabel="Schedule meeting"
                       onSubmit={handleSchedule}
@@ -801,6 +805,7 @@ export function CalendarShell({
         heading="Edit meeting"
         initial={editingMeeting ? meetingValues(editingMeeting) : blankMeeting(todayKey, 600)}
         people={people}
+        labels={labels}
         selfId={selfId}
         submitLabel="Save changes"
         note="Anyone you add gets an invite. If the time or place changes, everyone already on it is told."

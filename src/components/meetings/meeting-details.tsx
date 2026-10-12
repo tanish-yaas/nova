@@ -19,6 +19,16 @@ import { formatIST } from "@/lib/dates";
 import { RSVP_LABELS, placeLabel, type AttendeeStatus } from "@/lib/meetings";
 import type { EventItem } from "@/components/calendar/types";
 
+const BOARD_STATUS: Record<string, string> = {
+  BACKLOG: "To do",
+  TODO: "To do",
+  IN_PROGRESS: "In progress",
+  IN_REVIEW: "In progress",
+  BLOCKED: "In progress",
+  DONE: "Completed",
+  CANCELLED: "Cancelled",
+};
+
 const STATUS_STYLE: Record<AttendeeStatus, { color: string; Icon: typeof Check }> = {
   ACCEPTED: { color: "var(--status-green)", Icon: Check },
   TENTATIVE: { color: "var(--status-amber)", Icon: CircleHelp },
@@ -107,6 +117,33 @@ export function MeetingDetails({
           </span>
         </p>
       </div>
+
+      {(event.labels.length > 0 || event.taskStatus) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {event.taskStatus && (
+            <span
+              className="chip"
+              title="Where this meeting's card sits on the board. Drag it there to move it."
+              style={{
+                borderColor: "color-mix(in oklab, white 14%, transparent)",
+                backgroundColor: "color-mix(in oklab, white 6%, transparent)",
+                color: "var(--muted-foreground)",
+              }}
+            >
+              Board · {BOARD_STATUS[event.taskStatus] ?? event.taskStatus}
+            </span>
+          )}
+          {event.labels.map((l) => (
+            <span
+              key={l.id}
+              className="label-chip"
+              style={{ "--chip-color": l.color } as React.CSSProperties}
+            >
+              {l.name}
+            </span>
+          ))}
+        </div>
+      )}
 
       {event.mode === "online" && event.meetingUrl && !ended && (
         <a

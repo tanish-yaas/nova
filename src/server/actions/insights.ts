@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma";
 import { requireContext } from "@/server/rbac/guard";
-import { buildTaskScope } from "@/server/services/tasks";
+import { NOT_MEETING_TASK, buildTaskScope } from "@/server/services/tasks";
 import { addDaysToKey, formatIST, istKeyToDate, istTodayKey } from "@/lib/dates";
 import type { InsightFilter } from "@/server/services/insights";
 
@@ -68,7 +68,7 @@ export async function getInsightTasks(filter: NonNullable<InsightFilter>) {
       dueAt: { gte: startOfDay, lt: endOfDay },
     });
   } else if (filter === "undated") {
-    Object.assign(where, mine, open, { dueAt: null });
+    Object.assign(where, mine, open, { dueAt: null, ...NOT_MEETING_TASK });
   } else if (filter === "unassigned") {
     Object.assign(where, open, { assignments: { none: {} } });
   } else {
