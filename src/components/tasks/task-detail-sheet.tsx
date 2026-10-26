@@ -84,8 +84,10 @@ const PRIORITY_COLOR: Record<string, string> = {
   LOW: "#8B8B9E",
 };
 
-const field =
-  "w-full rounded-lg border border-border bg-secondary/50 px-2.5 py-1.5 text-xs outline-none transition-colors focus:border-brand-violet";
+/** The look of an input without its width, for inputs that share a row. */
+const fieldLook =
+  "rounded-lg border border-border bg-secondary/50 px-2.5 py-1.5 text-xs outline-none transition-colors focus:border-brand-violet";
+const field = `w-full ${fieldLook}`;
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -1074,7 +1076,7 @@ function DeliverableLinks({
             e.preventDefault();
             save(draft);
           }}
-          className="mt-2 flex items-center gap-1.5"
+          className="mt-2 flex w-full min-w-0 items-center gap-1.5"
         >
           {/* Text, not type="url": the browser's own check would refuse
               "drive.google.com/…", which is how people copy links. */}
@@ -1088,7 +1090,7 @@ function DeliverableLinks({
             onKeyDown={(e) => {
               if (e.key === "Escape") dropDraft(draft.key);
             }}
-            className={`${field} min-w-0 flex-1`}
+            className={`${fieldLook} min-w-0 flex-1`}
           />
           <input
             value={draft.label}
@@ -1099,7 +1101,7 @@ function DeliverableLinks({
             onKeyDown={(e) => {
               if (e.key === "Escape") dropDraft(draft.key);
             }}
-            className={`${field} w-32 shrink-0`}
+            className={`${fieldLook} w-28 min-w-0 shrink-0`}
           />
           <button
             type="submit"
