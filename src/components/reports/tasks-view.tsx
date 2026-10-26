@@ -5,6 +5,7 @@ import { ListChecks } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatIST } from "@/lib/dates";
 import type { ReportTask } from "@/lib/reports";
+import { linkText } from "@/lib/task-links";
 import { LabelChips, PriorityTag, StatusTag } from "./report-bits";
 
 const FIRST_PAINT = 300;
@@ -37,9 +38,10 @@ export function TasksView({
     <section className="panel overflow-x-auto">
       <p className="border-b border-[color-mix(in_oklab,white_7%,transparent)] px-4 py-2.5 text-[12px] text-faint">
         Every task that was open at some point in the period, blocked and in progress first. The
-        Excel download has every field, descriptions included.
+        Excel download has every field, descriptions included. Deliverable links open in a new tab,
+        here and in both downloads.
       </p>
-      <table className="w-full min-w-[860px] text-[13px]">
+      <table className="w-full min-w-[1020px] text-[13px]">
         <thead>
           <tr className="text-left text-[10px] uppercase tracking-[0.1em] text-faint">
             <th className="px-4 py-2.5 font-medium">Task</th>
@@ -50,6 +52,7 @@ export function TasksView({
             <th className="px-3 py-2.5 font-medium">Due</th>
             <th className="px-3 py-2.5 font-medium">Completed</th>
             <th className="px-3 py-2.5 font-medium">Labels</th>
+            <th className="px-3 py-2.5 font-medium">Deliverables</th>
           </tr>
         </thead>
         <tbody>
@@ -93,6 +96,27 @@ export function TasksView({
               </td>
               <td className="px-3 py-2">
                 <LabelChips labels={t.labels} />
+              </td>
+              <td className="max-w-[14rem] px-3 py-2 text-[12px]">
+                {t.links.length === 0 ? (
+                  <span className="text-faint">–</span>
+                ) : (
+                  <ul className="flex flex-col gap-0.5">
+                    {t.links.map((link, i) => (
+                      <li key={i} className="truncate">
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={link.url}
+                          className="text-primary underline-offset-2 hover:underline"
+                        >
+                          {linkText(link, 36)}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </td>
             </tr>
           ))}

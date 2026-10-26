@@ -16,6 +16,7 @@ const INK = "FF1A1A1E";
 const MUTED = "FF6B6B76";
 const HEADER_FILL = "FFEFEBFF";
 const LINE = "FFE4E4EA";
+const LINK = "FF2B5FD9";
 
 /**
  * A spreadsheet has no timezones: a cell holds a wall-clock time. So an
@@ -283,7 +284,13 @@ export async function renderReportXlsx(report: WorkReport): Promise<Buffer> {
 
   // --- Tasks ----------------------------------------------------------------
 
-  sheetWithTable(
+  // A cell holds one hyperlink, so each deliverable gets a column of its own:
+  // as many as the task with the most has, and one even when none do, so the
+  // column is there to be found.
+  const linkColumns = Math.max(1, ...report.tasks.map((t) => t.links.length));
+  const linkKey = (i: number) => `link${i}`;
+
+  const tasks = sheetWithTable(
     workbook,
     "Tasks",
     [
@@ -305,6 +312,11 @@ export async function renderReportXlsx(report: WorkReport): Promise<Buffer> {
       { header: "Actual (min)", key: "actual", width: 12 },
       { header: "Subtasks", key: "subtasks", width: 9 },
       { header: "Comments in period", key: "comments", width: 12 },
+      ...Array.from({ length: linkColumns }, (_, i) => ({
+        header: linkColumns === 1 ? "Deliverable" : `Deliverable ${i + 1}`,
+        key: linkKey(i),
+        width: 36,
+      })),
       { header: "Description", key: "description", width: 60, wrap: true },
     ],
     report.tasks.map((t) => ({
@@ -326,10 +338,24 @@ export async function renderReportXlsx(report: WorkReport): Promise<Buffer> {
       actual: t.actualMinutes,
       subtasks: t.subtasks || null,
       comments: t.commentsInPeriod || null,
+      ...Object.fromEntries(
+        t.links.map((link, i) => [
+          linkKey(i),
+          { text: link.label || link.url, hyperlink: link.url, tooltip: link.url },
+        ])
+      ),
       // Excel caps a cell at 32,767 characters.
       description: t.description.slice(0, 32000),
     }))
   );
+
+  // Blue and underlined, so a link reads as one before anyone hovers it.
+  for (let i = 0; i < linkColumns; i++) {
+    tasks.getColumn(linkKey(i)).eachCell((cell, row) => {
+      if (row === 1 || !cell.hyperlink) return;
+      cell.font = { color: { argb: LINK }, underline: true };
+    });
+  }
 
   // --- Activity -------------------------------------------------------------
 

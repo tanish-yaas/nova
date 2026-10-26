@@ -247,6 +247,7 @@ model User {
   taskAssignmentsMade TaskAssignment[]      @relation("TaskAssignmentAssigner")
   taskComments        TaskComment[]
   attachments         Attachment[]
+  taskLinksAdded      TaskLink[]
   statusChanges       TaskStatusHistory[]
   priorityChanges     TaskPriorityHistory[]
   createdLabels       Label[]
@@ -420,6 +421,7 @@ model Organization {
   taskLabels          TaskLabel[]
   taskComments        TaskComment[]
   attachments         Attachment[]
+  taskLinks           TaskLink[]
   taskStatusHistory   TaskStatusHistory[]
   taskPriorityHistory TaskPriorityHistory[]
 
@@ -877,6 +879,7 @@ model Task {
   labels          TaskLabel[]
   comments        TaskComment[]
   attachments     Attachment[]
+  links           TaskLink[]
   statusHistory   TaskStatusHistory[]
   priorityHistory TaskPriorityHistory[]
   events          CalendarEvent[]
@@ -1012,6 +1015,32 @@ model TaskComment {
   @@index([taskId, createdAt])
   @@index([deletedAt])
   @@map("task_comments")
+}
+
+/// A deliverable on a task: where the finished work lives (a Drive folder, the
+/// posted reel). A link and not an Attachment because the file is elsewhere and
+/// only its address is kept.
+model TaskLink {
+  id             String  @id @default(cuid())
+  organizationId String  @map("organization_id")
+  taskId         String  @map("task_id")
+  addedById      String? @map("added_by_id")
+
+  url   String
+  /// What the link is, when the address alone does not say. Optional.
+  label String?
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  task         Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  addedBy      User?        @relation(fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([taskId, deletedAt])
+  @@map("task_links")
 }
 
 model Attachment {

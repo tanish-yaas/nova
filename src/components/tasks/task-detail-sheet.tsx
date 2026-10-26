@@ -13,6 +13,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   Download,
+  ExternalLink,
+  Link2,
   Loader2,
   MessageSquare,
   Mic,
@@ -36,18 +38,21 @@ import { updateTask } from "@/server/actions/tasks";
 import {
   addComment,
   addSubtask,
+  addTaskLink,
   attachmentLink,
   deleteAttachment,
   deleteComment,
   deleteSubtask,
   editComment,
   loadTaskDetail,
+  removeTaskLink,
   setTaskAssignees,
   setSubtaskDone,
   uploadTaskAttachment,
 } from "@/server/actions/task-detail";
 import { setTaskLabels } from "@/server/actions/labels";
 import { setTaskTeam } from "@/server/actions/teams";
+import { normalizeLink, shortLink, type TaskLinkItem } from "@/lib/task-links";
 import { DependencySection } from "./dependency-section";
 import { LabelPicker } from "./label-picker";
 import {
@@ -310,6 +315,19 @@ export function TaskDetailSheet({
               {detail && (
                 <>
                   <Fields detail={detail} onSaved={reload} />
+
+                  <Section
+                    title="Deliverables"
+                    count={detail.links.length}
+                    icon={<Link2 size={11} />}
+                  >
+                    <DeliverableLinks
+                      taskId={detail.id}
+                      links={detail.links}
+                      canEdit={detail.canEdit}
+                      onChanged={reload}
+                    />
+                  </Section>
 
                   <Section title="Subtasks" count={totalSubtasks}>
                     {totalSubtasks > 0 && (
@@ -928,6 +946,191 @@ function Fields({
           className={field}
         />
       </div>
+    </div>
+  );
+}
+
+type LinkDraft = { key: number; url: string; label: string };
+
+/**
+ * Where the finished work lives. Each + opens another row, so a task with a
+ * reel, a thumbnail and a Drive folder takes three presses, not three trips.
+ */
+function DeliverableLinks({
+  taskId,
+  links,
+  canEdit,
+  onChanged,
+}: {
+  taskId: string;
+  links: TaskLinkItem[];
+  canEdit: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const { push } = useToast();
+  const [drafts, setDrafts] = useState<LinkDraft[]>([]);
+  const [pending, startTransition] = useTransition();
+  const nextKey = useRef(0);
+
+  function addDraft() {
+    const key = nextKey.current++;
+    setDrafts((list) => [...list, { key, url: "", label: "" }]);
+  }
+
+  function updateDraft(key: number, patch: Partial<LinkDraft>) {
+    setDrafts((list) => list.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+  }
+
+  function dropDraft(key: number) {
+    setDrafts((list) => list.filter((d) => d.key !== key));
+  }
+
+  function save(draft: LinkDraft) {
+    // A column of links pasted in one go becomes one link each.
+    const parts = draft.url.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) {
+      dropDraft(draft.key);
+      return;
+    }
+    const bad = parts.find((p) => !normalizeLink(p));
+    if (bad) {
+      push(`${shortLink(bad)} doesn't look like a web link`, "error");
+      return;
+    }
+
+    startTransition(async () => {
+      for (let i = 0; i < parts.length; i++) {
+        const label = parts.length === 1 ? draft.label : undefined;
+        const result = await addTaskLink(taskId, parts[i], label);
+        if (!result.ok) {
+          push(result.error, "error");
+          // Keep only what did not save, so pressing Enter again adds no twins.
+          updateDraft(draft.key, { url: parts.slice(i).join("\n") });
+          await onChanged();
+          return;
+        }
+      }
+      dropDraft(draft.key);
+      await onChanged();
+    });
+  }
+
+  function remove(linkId: string) {
+    startTransition(async () => {
+      const result = await removeTaskLink(linkId);
+      if (!result.ok) push(result.error, "error");
+      await onChanged();
+    });
+  }
+
+  return (
+    <div className={pending ? "opacity-70" : ""}>
+      {links.length === 0 && drafts.length === 0 && !canEdit && (
+        <p className="text-xs text-muted-foreground/70">No deliverables yet.</p>
+      )}
+
+      <div className="flex flex-col">
+        {links.map((link) => (
+          <div
+            key={link.id}
+            className="group flex items-center gap-2.5 rounded-lg px-1 py-1.5 transition-colors hover:bg-secondary/40"
+          >
+            <ExternalLink size={12} className="shrink-0 text-muted-foreground" />
+            <a
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={link.url}
+              className="min-w-0 flex-1 truncate text-xs underline-offset-2 hover:underline"
+            >
+              {link.label ? (
+                <>
+                  {link.label}
+                  <span className="text-muted-foreground"> · {shortLink(link.url, 40)}</span>
+                </>
+              ) : (
+                shortLink(link.url, 72)
+              )}
+            </a>
+            {canEdit && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => remove(link.id)}
+                aria-label="Remove link"
+                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {drafts.map((draft) => (
+        <form
+          key={draft.key}
+          onSubmit={(e) => {
+            e.preventDefault();
+            save(draft);
+          }}
+          className="mt-2 flex items-center gap-1.5"
+        >
+          {/* Text, not type="url": the browser's own check would refuse
+              "drive.google.com/…", which is how people copy links. */}
+          <input
+            autoFocus
+            inputMode="url"
+            value={draft.url}
+            disabled={pending}
+            placeholder="Paste a link"
+            onChange={(e) => updateDraft(draft.key, { url: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") dropDraft(draft.key);
+            }}
+            className={`${field} min-w-0 flex-1`}
+          />
+          <input
+            value={draft.label}
+            disabled={pending}
+            placeholder="Name (optional)"
+            maxLength={120}
+            onChange={(e) => updateDraft(draft.key, { label: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") dropDraft(draft.key);
+            }}
+            className={`${field} w-32 shrink-0`}
+          />
+          <button
+            type="submit"
+            disabled={pending || !draft.url.trim()}
+            aria-label="Save link"
+            className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+          >
+            <Check size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => dropDraft(draft.key)}
+            aria-label="Cancel"
+            className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <X size={14} />
+          </button>
+        </form>
+      ))}
+
+      {canEdit && (
+        <button
+          type="button"
+          onClick={addDraft}
+          disabled={pending}
+          className="mt-2 flex items-center gap-1.5 rounded px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Plus size={13} />
+          Add link
+        </button>
+      )}
     </div>
   );
 }

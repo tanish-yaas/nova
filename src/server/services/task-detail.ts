@@ -3,6 +3,7 @@ import { buildTaskScope } from "@/server/services/tasks";
 import { formatIST, toLocalInput } from "@/lib/dates";
 import { meetingMode, placeLabel } from "@/lib/meetings";
 import { isStorageConfigured } from "@/lib/storage";
+import type { TaskLinkItem } from "@/lib/task-links";
 
 export type CommentNode = {
   id: string;
@@ -85,6 +86,8 @@ export type TaskDetailData = {
   readyToStart: boolean;
   comments: CommentNode[];
   attachments: AttachmentRow[];
+  /** Deliverables: where the finished work lives. Oldest first. */
+  links: TaskLinkItem[];
   activity: ActivityRow[];
   canEdit: boolean;
   /** Object storage is configured, so recording and uploading are available. */
@@ -185,6 +188,11 @@ export async function getTaskDetail(
         where: { deletedAt: null },
         orderBy: { createdAt: "desc" },
         include: { uploadedBy: { select: { name: true, email: true } } },
+      },
+      links: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, url: true, label: true },
       },
       dependencies: {
         where: { type: "BLOCKS" },
@@ -362,6 +370,7 @@ export async function getTaskDetail(
       createdAt: a.createdAt.toISOString(),
       isMine: a.uploadedById === userId,
     })),
+    links: task.links,
     activity,
     canEdit,
     // Carried on the detail rather than passed in: the sheet is opened from the

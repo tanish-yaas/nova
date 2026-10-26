@@ -491,6 +491,11 @@ export async function buildWorkReport(
         select: { label: { select: { id: true, name: true, color: true } } },
       },
       _count: { select: { subtasks: { where: { deletedAt: null } } } },
+      links: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { url: true, label: true },
+      },
     },
   });
 
@@ -886,6 +891,7 @@ export async function buildWorkReport(
         commentsInPeriod: commentsPerTask.get(task.id) ?? 0,
         overdue:
           !!task.dueAt && task.dueAt < now && !FINISHED.has(task.status),
+        links: task.links,
       });
     }
   }

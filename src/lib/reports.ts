@@ -431,6 +431,8 @@ export type ReportTask = {
   subtasks: number;
   commentsInPeriod: number;
   overdue: boolean;
+  /** Deliverable links, oldest first. Clickable in both exports. */
+  links: { url: string; label: string | null }[];
 };
 
 /** One raw event, for the spreadsheet's Activity sheet. */

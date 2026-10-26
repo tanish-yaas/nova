@@ -13,6 +13,7 @@ import {
   type LogEntry,
   type WorkReport,
 } from "@/lib/reports";
+import { linkText } from "@/lib/task-links";
 
 /**
  * Geist, the face the app itself is set in, embedded rather than relying on
@@ -31,6 +32,7 @@ const LINE = "#e4e4ea";
 const HEADER_FILL = "#f4f3f8";
 const BAND_FILL = "#efebff";
 const ACCENT = "#7c5cff";
+const LINK = "#2b5fd9";
 
 const STATUS_INK: Record<string, string> = {
   DONE: "#2f7a55",
@@ -66,6 +68,9 @@ type Cell = {
   sub?: string;
   color?: string;
   bold?: boolean;
+  /** One per line under the text, each a clickable link in the PDF. A line
+      with no url is plain text: the "+3 more" note. */
+  links?: { text: string; url?: string }[];
 };
 
 type Column = {
@@ -80,6 +85,8 @@ const PAD_X = 5;
 const PAD_Y = 4;
 /** Long cells are clipped with an ellipsis; the spreadsheet has them whole. */
 const MAX_ROW = 96;
+/** Links drawn in a cell before the rest are summed up. Seven lines fit MAX_ROW. */
+const PDF_LINKS = 6;
 
 class Writer {
   doc: PDFKit.PDFDocument;
@@ -158,6 +165,12 @@ class Writer {
       doc.font(REGULAR).fontSize(SUB_SIZE);
       h += 1 + doc.heightOfString(cell.sub, { width: inner });
     }
+    if (cell.links?.length) {
+      // Each link is held to one line and clipped, so a long URL costs no
+      // more height than a short one.
+      doc.font(REGULAR).fontSize(BODY_SIZE);
+      h += (h ? 1 : 0) + cell.links.length * doc.heightOfString("A", { width: inner });
+    }
     return Math.max(h, BODY_SIZE + 2);
   }
 
@@ -221,11 +234,31 @@ class Writer {
       }
       if (cell.sub && cy < this.y + PAD_Y + content) {
         doc.font(REGULAR).fontSize(SUB_SIZE).fillColor(FAINT);
+        const subH = Math.min(
+          this.y + PAD_Y + content - cy,
+          doc.heightOfString(cell.sub, { width: inner })
+        );
         doc.text(cell.sub, x + PAD_X, cy, {
           width: inner,
-          height: this.y + PAD_Y + content - cy,
+          height: subH,
           ellipsis: true,
         });
+        cy += subH + 1;
+      }
+      if (cell.links?.length) {
+        doc.font(REGULAR).fontSize(BODY_SIZE);
+        const lineH = doc.heightOfString("A", { width: inner });
+        for (const link of cell.links) {
+          if (cy + lineH > this.y + PAD_Y + content + 0.5) break;
+          doc.fillColor(link.url ? LINK : FAINT);
+          doc.text(link.text, x + PAD_X, cy, {
+            width: inner,
+            height: lineH + 0.5,
+            ellipsis: true,
+            ...(link.url ? { link: link.url, underline: true } : {}),
+          });
+          cy += lineH;
+        }
       }
       x += col.width;
     });
@@ -309,6 +342,20 @@ function titleCell(entry: { title: string; parentTitle: string | null }): Cell {
   return {
     text: clean(entry.title),
     sub: entry.parentTitle ? `in ${clean(entry.parentTitle)}` : undefined,
+  };
+}
+
+/** The task's deliverables, each one clickable, the overflow counted. */
+function linksCell(links: { url: string; label: string | null }[]): Cell {
+  if (links.length === 0) return { text: "–", color: FAINT };
+  const shown = links.slice(0, PDF_LINKS).map((link) => ({
+    text: clean(linkText(link, 120)) || link.url,
+    url: link.url,
+  }));
+  const more = links.length - shown.length;
+  return {
+    text: "",
+    links: more > 0 ? [...shown, { text: `+${more} more in the Excel download` }] : shown,
   };
 }
 
@@ -549,14 +596,15 @@ export async function renderReportPdf(report: WorkReport): Promise<Buffer> {
     w.text("No tasks in this period.", { color: MUTED });
   } else {
     const taskCols = cols(w.width, [
-      ["Task", 4.6],
-      ["Assignees", 2.4],
+      ["Task", 3.8],
+      ["Assignees", 2],
       ["Status", 1.3],
       ["Priority", 1],
       ["Created", 1.3],
       ["Due", 1.3],
       ["Completed", 1.4],
-      ["Labels", 1.8],
+      ["Labels", 1.5],
+      ["Deliverables", 3],
     ]);
     const date = (iso: string | null) =>
       iso ? (formatIST(new Date(iso), { day: "2-digit" }) ?? "") : "";
@@ -576,6 +624,7 @@ export async function renderReportPdf(report: WorkReport): Promise<Buffer> {
           },
           { text: date(t.completedAt) },
           { text: clean(t.labels.map((l) => l.name).join(", ")) },
+          linksCell(t.links),
         ],
       }))
     );

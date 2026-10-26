@@ -11,6 +11,7 @@ import {
   signedUrl,
   uploadAttachment as uploadToStorage,
 } from "@/lib/storage";
+import { MAX_LINKS_PER_TASK, MAX_LINK_LABEL, normalizeLink } from "@/lib/task-links";
 
 function refresh() {
   revalidateWorkspace("/tasks", "/", "/calendar");
@@ -326,6 +327,60 @@ export async function setTaskAssignees(taskId: string, userIds: string[]) {
         })),
       });
     }
+  });
+
+  refresh();
+  return { ok: true as const };
+}
+
+// ---------------------------------------------------------------------------
+// Deliverable links
+// ---------------------------------------------------------------------------
+
+export async function addTaskLink(taskId: string, rawUrl: string, rawLabel?: string) {
+  const ctx = await requirePermission("task.edit_own");
+  const orgId = ctx.membership!.organizationId;
+  const userId = ctx.session.user.id;
+
+  const url = normalizeLink(rawUrl);
+  if (!url) return { ok: false as const, error: "That doesn't look like a web link" };
+  const label = (rawLabel ?? "").trim().slice(0, MAX_LINK_LABEL) || null;
+
+  const task = await canMutateTask(taskId, orgId, userId, ctx.permissions);
+  if (!task) return { ok: false as const, error: "Not allowed" };
+
+  const existing = await prisma.taskLink.count({
+    where: { taskId, deletedAt: null },
+  });
+  if (existing >= MAX_LINKS_PER_TASK) {
+    return { ok: false as const, error: `A task holds up to ${MAX_LINKS_PER_TASK} links` };
+  }
+
+  await prisma.taskLink.create({
+    data: { organizationId: orgId, taskId, addedById: userId, url, label },
+  });
+
+  refresh();
+  return { ok: true as const };
+}
+
+export async function removeTaskLink(linkId: string) {
+  const ctx = await requirePermission("task.edit_own");
+  const orgId = ctx.membership!.organizationId;
+  const userId = ctx.session.user.id;
+
+  const link = await prisma.taskLink.findFirst({
+    where: { id: linkId, organizationId: orgId, deletedAt: null },
+    select: { id: true, taskId: true },
+  });
+  if (!link) return { ok: false as const, error: "Link not found" };
+
+  const task = await canMutateTask(link.taskId, orgId, userId, ctx.permissions);
+  if (!task) return { ok: false as const, error: "Not allowed" };
+
+  await prisma.taskLink.update({
+    where: { id: link.id },
+    data: { deletedAt: new Date() },
   });
 
   refresh();
